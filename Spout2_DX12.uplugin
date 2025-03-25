@@ -1,0 +1,24 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Spout2_DX12",
+	"Description": "Spout2 Support For Unreal Engine 5 on DX12",
+	"Category": "Other",
+	"CreatedBy": "GPUBrainStorm",
+	"CreatedByURL": "https://github.com/GPUbrainStorm",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": true,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "Spout2_DX12",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
