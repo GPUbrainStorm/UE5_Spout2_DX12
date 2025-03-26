@@ -16,7 +16,7 @@ public:
 	virtual void ShutdownModule() override;
 
 	void SendRenderTarget(UTextureRenderTarget2D* RenderTarget, const FString& InSenderName);
-	void UpdateTexture(UTextureRenderTarget2D* RenderTarget, const FString& InSenderName);
+	void UpdateTexture();
 
 	static inline FSpout2_DX12Module& Get()
 	{
@@ -26,5 +26,6 @@ public:
 private:
 	spoutDX12 SpoutBridge;
 	void* SpoutLibraryHandle = nullptr;
+	ID3D11Resource* CurrWrappedResource = nullptr;
 
 };

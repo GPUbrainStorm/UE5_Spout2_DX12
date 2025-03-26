@@ -47,6 +47,12 @@ void FSpout2_DX12Module::ShutdownModule()
 		FPlatformProcess::FreeDllHandle(SpoutLibraryHandle);
 		SpoutLibraryHandle = nullptr;
 	}
+	// Release the current wrapped resource
+	if (CurrWrappedResource)
+	{
+		CurrWrappedResource->Release();
+		CurrWrappedResource = nullptr;
+	}
 #endif
 }
 
@@ -69,7 +75,7 @@ void FSpout2_DX12Module::SendRenderTarget(UTextureRenderTarget2D* RenderTarget, 
 
 	// Send the render target to Spout using ENQUEUE_RENDER_COMMAND for thread safety on the render thread
 	ENQUEUE_RENDER_COMMAND(SendSpoutRenderTarget)(
-		[RHITexture, LocalSpoutBridge, InSenderName](FRHICommandListImmediate& RHICmdList)
+		[this, RHITexture, LocalSpoutBridge, InSenderName](FRHICommandListImmediate& RHICmdList)
 		{
 		// Get the native DX12 resource
 		ID3D12Resource* NativeTexture = static_cast<ID3D12Resource*>(RHITexture->GetNativeResource());
@@ -83,7 +89,7 @@ void FSpout2_DX12Module::SendRenderTarget(UTextureRenderTarget2D* RenderTarget, 
 		if (LocalSpoutBridge->WrapDX12Resource(NativeTexture, &Wrapped11Resource, D3D12_RESOURCE_STATE_RENDER_TARGET) && Wrapped11Resource)
 		{
 			LocalSpoutBridge->SendDX11Resource(Wrapped11Resource);
-			Wrapped11Resource->Release();
+			CurrWrappedResource = Wrapped11Resource;
 		}
 		}
 		);
@@ -91,31 +97,17 @@ void FSpout2_DX12Module::SendRenderTarget(UTextureRenderTarget2D* RenderTarget, 
 }
 
 // Update a UTextureRenderTarget2D in Spout
-void FSpout2_DX12Module::UpdateTexture(UTextureRenderTarget2D* RenderTarget, const FString& InSenderName)
+void FSpout2_DX12Module::UpdateTexture()
 {
 #if PLATFORM_WINDOWS
-	if (!RenderTarget || InSenderName.IsEmpty()) return;
-
-	FTextureRenderTargetResource* RTResource = RenderTarget->GameThread_GetRenderTargetResource();
-	if (!RTResource) return;
-
-	FTextureRHIRef RHITexture = RTResource->GetRenderTargetTexture();
-	if (!RHITexture.IsValid()) return;
 
 	spoutDX12* LocalSpoutBridge = &SpoutBridge;
-
 	ENQUEUE_RENDER_COMMAND(UpdateSpoutRenderTarget)(
-		[RHITexture, LocalSpoutBridge, InSenderName](FRHICommandListImmediate& RHICmdList)
+		[this, LocalSpoutBridge](FRHICommandListImmediate& RHICmdList)
 		{
-			ID3D12Resource* NativeTexture = static_cast<ID3D12Resource*>(RHITexture->GetNativeResource());
-			if (!NativeTexture || !LocalSpoutBridge) return;
-
-			ID3D11Resource* Wrapped11Resource = nullptr;
-
-			if (LocalSpoutBridge->WrapDX12Resource(NativeTexture, &Wrapped11Resource, D3D12_RESOURCE_STATE_RENDER_TARGET) && Wrapped11Resource)
+			if (CurrWrappedResource)
 			{
-				LocalSpoutBridge->SendDX11Resource(Wrapped11Resource);
-				Wrapped11Resource->Release();
+				LocalSpoutBridge->SendDX11Resource(CurrWrappedResource);
 			}
 		});
 #endif
