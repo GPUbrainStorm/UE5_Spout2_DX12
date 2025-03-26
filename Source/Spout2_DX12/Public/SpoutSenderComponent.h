@@ -16,14 +16,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Spout")
     void SendRenderTarget(UTextureRenderTarget2D* RenderTarget, const FString& SenderName);
 
+	void UpdateTexture();
+
     UFUNCTION(BlueprintCallable, Category = "Spout")
     void StartBroadcast(UTextureRenderTarget2D* RenderTarget, const FString& SenderName = "Sender Component", int32 FPS = 60);
 
     UFUNCTION(BlueprintCallable, Category = "Spout")
     void StopBroadcast();
-
-    UFUNCTION()
-    void BroadcastTick();
 
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
@@ -41,4 +40,5 @@ protected:
 
 private:
     spoutDX12 SpoutBridge;
+	ID3D11Resource* CurrWrappedResource = nullptr;
 };

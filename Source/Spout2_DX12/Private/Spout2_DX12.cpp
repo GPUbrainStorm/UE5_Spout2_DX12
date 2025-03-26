@@ -12,6 +12,9 @@
 #include "CoreMinimal.h"
 #include "Misc/Paths.h"
 #include "TextureResource.h"
+//#include "Windows/AllowWindowsPlatformTypes.h"
+//#include <d3d11.h>
+//#include "Windows/HideWindowsPlatformTypes.h"
 
 #define LOCTEXT_NAMESPACE "FSpout2_DX12Module"
 

@@ -39,7 +39,7 @@ void USpoutSenderComponent::SendRenderTarget(UTextureRenderTarget2D* RenderTarge
     spoutDX12* LocalSpoutBridge = &SpoutBridge;
 
     ENQUEUE_RENDER_COMMAND(SendSpoutRenderTarget)(
-        [RHITexture, LocalSpoutBridge, SenderName](FRHICommandListImmediate& RHICmdList)
+        [this, RHITexture, LocalSpoutBridge, SenderName](FRHICommandListImmediate& RHICmdList)
         {
             ID3D12Resource* NativeTexture = static_cast<ID3D12Resource*>(RHITexture->GetNativeResource());
             if (!NativeTexture || !LocalSpoutBridge) return;
@@ -50,19 +50,19 @@ void USpoutSenderComponent::SendRenderTarget(UTextureRenderTarget2D* RenderTarge
             if (LocalSpoutBridge->WrapDX12Resource(NativeTexture, &Wrapped11Resource, D3D12_RESOURCE_STATE_RENDER_TARGET) && Wrapped11Resource)
             {
                 LocalSpoutBridge->SendDX11Resource(Wrapped11Resource);
-                Wrapped11Resource->Release();
+				CurrWrappedResource = Wrapped11Resource;
             }
         });
 #endif
 }
 
-
-void USpoutSenderComponent::BroadcastTick()
+void USpoutSenderComponent::UpdateTexture()
 {
-    if (CurrentRenderTarget && !CurrentSenderName.IsEmpty())
-    {
-        SendRenderTarget(CurrentRenderTarget, CurrentSenderName);
-    }
+	if (CurrWrappedResource)
+	{
+        spoutDX12* LocalSpoutBridge = &SpoutBridge;
+        LocalSpoutBridge->SendDX11Resource(CurrWrappedResource);
+	}
 }
 
 void USpoutSenderComponent::StartBroadcast(UTextureRenderTarget2D* RenderTarget, const FString& SenderName, int32 FPS)
@@ -83,7 +83,7 @@ void USpoutSenderComponent::StartBroadcast(UTextureRenderTarget2D* RenderTarget,
     UWorld* World = GetWorld();
     if (!World) return;
 
-    World->GetTimerManager().SetTimer(BroadcastTimerHandle, this, &USpoutSenderComponent::BroadcastTick, Interval, true);
+    World->GetTimerManager().SetTimer(BroadcastTimerHandle, this, &USpoutSenderComponent::UpdateTexture, Interval, true);
 }
 
 void USpoutSenderComponent::StopBroadcast()
@@ -91,5 +91,7 @@ void USpoutSenderComponent::StopBroadcast()
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(BroadcastTimerHandle);
+		CurrWrappedResource->Release();
+		CurrWrappedResource = nullptr;
     }
 }
