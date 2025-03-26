@@ -41,7 +41,7 @@ void USpout2BlueprintLibrary::StartSpoutBroadcast(FString SenderName, UTextureRe
         {
             if (RenderTarget)
             {
-                FSpout2_DX12Module::Get().UpdateTexture(RenderTarget, SenderName);
+                FSpout2_DX12Module::Get().UpdateTexture();
             } else 
             { 
                 UE_LOG(LogTemp, Log, TEXT("Spout Error! No render target."));
