@@ -26,7 +26,7 @@ Unreal Engine 5.2.1 on Windows with DirectX 12.
 3. **Launch**  
    Open your project in Unreal Engine 5.2.1.
 
-**For a packaged projects:**
+**For packaged projects:**
 Copy `SpoutDX12.dll` from:  
    `Spout2_DX12/Binaries/ThirdParty/Spout2_DX12Library/Win64`  
 To your packaged project's binaries folder:
