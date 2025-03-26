@@ -14,7 +14,7 @@ Unreal Engine 5.2.1 on Windows with DirectX 12.
 ## Installation Instructions
 
 1. **Download**  
-   Extract the zip into your project's `Plugins` folder:  
+   Download the correct version from [Releases](https://github.com/GPUbrainStorm/UE5_Spout2_DX12/releases) then Extract the zip into your project's `Plugins` folder:  
    `YourProjectFolder/Plugins`
 
 2. **Copy DLL**  
