@@ -3,6 +3,9 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "SpoutDX12.h"
+#include "Windows/AllowWindowsPlatformTypes.h"
+#include <windows.h>
+#include "Windows/HideWindowsPlatformTypes.h"
 #include "SpoutSenderComponent.generated.h"
 
 UCLASS(ClassGroup = (Spout), meta = (BlueprintSpawnableComponent))
