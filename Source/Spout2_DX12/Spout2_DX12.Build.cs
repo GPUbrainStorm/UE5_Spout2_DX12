@@ -47,7 +47,8 @@ public class Spout2_DX12 : ModuleRules
 				// ... add private dependencies that you statically link with here ...
 				"Engine",
                 "RenderCore",
-                "RHI"
+                "RHI",
+                "D3D12RHI"
             }
             );
 		

@@ -5,6 +5,7 @@
 #include "SpoutDX12.h"
 #include "Windows/AllowWindowsPlatformTypes.h"
 #include <windows.h>
+#include "RHIResources.h"
 #include "Windows/HideWindowsPlatformTypes.h"
 #include "SpoutSenderComponent.generated.h"
 
@@ -17,7 +18,6 @@ public:
     USpoutSenderComponent();
 
     UFUNCTION(BlueprintCallable, Category = "Spout")
-    void SendRenderTarget(UTextureRenderTarget2D* RenderTarget, const FString& SenderName);
 
 	void UpdateTexture();
 
@@ -27,7 +27,8 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Spout")
     void StopBroadcast();
 
-
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
+    bool Auto_Start = true;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
     FString CurrentSenderName = "Component Broadcast";
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
@@ -42,6 +43,10 @@ protected:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-    spoutDX12 SpoutBridge;
-	ID3D11Resource* CurrWrappedResource = nullptr;
+	spoutDX12 SpoutBridge; // Spout DX12 wrapper
+	ID3D11Resource* CurrWrappedResource = nullptr; // wrapped live texture
+	ID3D11Resource* StagingWrapped11 = nullptr; // wrapped staging texture for stable readback
+	FTextureRHIRef StagingRHI; // staging texture RHI
+	int32 StagingW = 0, StagingH = 0; // staging texture size
+	EPixelFormat StagingPF = PF_Unknown; // staging texture format
 };
