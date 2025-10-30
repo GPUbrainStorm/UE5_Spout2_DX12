@@ -2,10 +2,10 @@
 
 Spout2 plugin for **Unreal Engine 5** using **DirectX 12**.
 
-This plugin enables **Spout sending** directly from Unreal Engine via DX12.
-Stable in both editor and packaged builds.
+This plugin enables **Spout sending and receiving** directly from and to Unreal Engine via DX12.
+Works in both editor and packaged builds.
 
-> **Note:** This is a beta release — proceed with caution.
+> **Note:** Beta release.
 
 **Test Environment:**
 Unreal Engine 5.2.1 on Windows with DirectX 12.
@@ -37,9 +37,6 @@ to your packaged project's binaries folder:
 
 ## Usage
 
-Currently, the plugin only **supports sending**.
-Receiving will be added in a future update.
-
 ### SpoutSender Component
 
 All Spout functionality is now handled by the **SpoutSender Component**.
@@ -64,14 +61,44 @@ Examples:
 
 ---
 
-## Version 0.3 Release Notes
+### SpoutReceiver Component (NEW)
+
+Introducing the new receiver component to read from senders within Unreal Engine over DX12.
+
+## Blueprint Callable
+* `StartReceiving()`
+* `StopReceiving()`
+* `GetAvailableSenders() -> TArray<FString>`
+* `IsConnected() -> bool`
+
+## Key Properties
+* `bAutoStart` — start on BeginPlay.
+* `OutputRenderTarget` — destination RT
+* `TargetFPS` — receive cadence; `0` = one frame then stop.
+* `SpoutSenderName` — optional explicit sender.
+
+All the properties can be set during the runtime after calling `StopReceiving()` and then calling `StartReceiving()` again.
+
+**Screenshots:**
+<img width="1571" height="716" alt="image" src="https://github.com/user-attachments/assets/120a29e2-ccdb-47cb-ad1f-ef94c5f379a7" />
+<img width="892" height="565" alt="image" src="https://github.com/user-attachments/assets/83205f90-7f36-42f8-972f-9b1cebe6e875" />
+
+---
+## Version 1.0.0 Release Notes
 
 **Summary:**
-Refactored to a single-component architecture with improved stability and flicker-free rendering.
+Introducing the new receiver component to read from senders within Unreal Engine over DX12.
 
-**Changes:**
+## Blueprint Callable
+* `StartReceiving()`
+* `StopReceiving()`
+* `GetAvailableSenders() -> TArray<FString>`
+* `IsConnected() -> bool`
 
-* Removed the Spout2BlueprintLibrary and Spout2_DX12Module global function.
-* Fixed SceneCapture flickering using shared staging texture handling.
-* Added `Auto_Start` property for more control over start broadcasting.
-* Improved DX12 resource cleanup and stability.
+## Key Properties
+* `bAutoStart` — start on BeginPlay.
+* `OutputRenderTarget` — destination RT
+* `TargetFPS` — receive cadence; `0` = one frame then stop.
+* `SpoutSenderName` — optional explicit sender.
+
+All the properties can be set during the runtime after calling `StopReceiving()` and then calling `StartReceiving()` again.
