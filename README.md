@@ -19,7 +19,7 @@ This plugin enables **Spout sending and receiving** directly in Unreal (Editor &
 YourProject/Plugins/Spout2_DX12/
 ```
 
-2. **Done** ✅
+2. **Done**
    Third-party DLLs and headers are handled automatically. No manual copying to the Engine folder is required.
 
 ### Packaged builds
