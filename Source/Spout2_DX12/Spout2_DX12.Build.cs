@@ -5,22 +5,24 @@ using UnrealBuildTool;
 
 public class Spout2_DX12 : ModuleRules
 {
-	public Spout2_DX12(ReadOnlyTargetRules Target) : base(Target)
-	{
-		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
+    public Spout2_DX12(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-        PublicIncludePaths.AddRange(new string[]
+        // Includes
+        PublicIncludePaths.AddRange(new[]
         {
-            Path.Combine(ModuleDirectory, "..", "ThirdParty", "include"),
+            Path.Combine(PluginDirectory, "Source", "ThirdParty", "include"),
             Path.Combine(ModuleDirectory, "Public"),
         });
 
-        PrivateIncludePaths.AddRange(new string[]
+        PrivateIncludePaths.AddRange(new[]
         {
             Path.Combine(ModuleDirectory, "Private"),
         });
 
-        PublicDependencyModuleNames.AddRange(new string[]
+        // UE deps
+        PublicDependencyModuleNames.AddRange(new[]
         {
             "Core",
             "Projects",
@@ -33,7 +35,7 @@ public class Spout2_DX12 : ModuleRules
             "SlateCore",
         });
 
-        PrivateDependencyModuleNames.AddRange(new string[]
+        PrivateDependencyModuleNames.AddRange(new[]
         {
             "Engine",
             "RenderCore",
@@ -43,29 +45,26 @@ public class Spout2_DX12 : ModuleRules
 
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {
-            string TP = Path.Combine(ModuleDirectory, "..", "ThirdParty");
+            string TP = Path.Combine(PluginDirectory, "Source", "ThirdParty");
+            string IncDir = Path.Combine(TP, "include");
             string LibDir = Path.Combine(TP, "lib", "Win64");
             string BinDir = Path.Combine(TP, "bin", "Win64");
 
-            PublicIncludePaths.Add(Path.Combine(TP, "include"));
+            PublicIncludePaths.Add(IncDir);
+
+            // Link against import libs
             PublicAdditionalLibraries.Add(Path.Combine(LibDir, "Spout.lib"));
             PublicAdditionalLibraries.Add(Path.Combine(LibDir, "SpoutDX12.lib"));
+
+            // TRUE delay-load (NAMES ONLY — no paths)
             PublicDelayLoadDLLs.AddRange(new[] { "Spout.dll", "SpoutDX12.dll" });
 
-            // Runtime dependencies - Editor
-            if (Target.Type == TargetType.Editor)
-            {
-                // Copy the dll next to the project's Editor binaries
-                RuntimeDependencies.Add("$(ProjectDir)/Binaries/Win64/Spout.dll", Path.Combine(BinDir, "Spout.dll"));
-                RuntimeDependencies.Add("$(ProjectDir)/Binaries/Win64/SpoutDX12.dll", Path.Combine(BinDir, "SpoutDX12.dll"));
-            }
-            else // Game/Client/Server
-            {
-                // Normal build outputs
-                RuntimeDependencies.Add("$(BinaryOutputDir)/Spout.dll", Path.Combine(BinDir, "Spout.dll"));
-                RuntimeDependencies.Add("$(BinaryOutputDir)/SpoutDX12.dll", Path.Combine(BinDir, "SpoutDX12.dll"));
-            }
-
+            // Place alongside built target binaries
+            RuntimeDependencies.Add("$(BinaryOutputDir)/Spout.dll",
+                    Path.Combine(BinDir, "Spout.dll"));
+            RuntimeDependencies.Add("$(BinaryOutputDir)/SpoutDX12.dll",
+                    Path.Combine(BinDir, "SpoutDX12.dll"));
+            // Stage both for packaged builds
             RuntimeDependencies.Add(Path.Combine(BinDir, "Spout.dll"), StagedFileType.NonUFS);
             RuntimeDependencies.Add(Path.Combine(BinDir, "SpoutDX12.dll"), StagedFileType.NonUFS);
         }

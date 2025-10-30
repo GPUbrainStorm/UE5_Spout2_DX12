@@ -47,7 +47,8 @@ protected:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-    spoutDX12 SpoutBridge;
+    // SpoutSenderComponent.cpp
+    spoutDX12* SpoutBridge = nullptr;
 	ID3D11Resource* CurrWrappedResource = nullptr;
 	ID3D11Resource* StagingWrapped11 = nullptr;
 	FTextureRHIRef StagingRHI;

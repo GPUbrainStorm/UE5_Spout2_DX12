@@ -9,11 +9,21 @@
 #include "RHICommandList.h"
 #include "RenderResource.h"
 #include "TextureResource.h"
-#include "SpoutDX.h"
 #include "Windows/MinWindows.h"
+
+THIRD_PARTY_INCLUDES_START
 #include "Windows/AllowWindowsPlatformTypes.h"
-#include <windows.h>
+#include <Windows.h>
+#include <d3d11.h>
+#include <d3d12.h>
+#include <d3d11on12.h>
+#include <dxgi.h>
 #include "Windows/HideWindowsPlatformTypes.h"
+#include "SpoutDX.h"
+#include "SpoutDX12.h"
+
+
+THIRD_PARTY_INCLUDES_END
 
 class FTextureRenderTargetResource;
 
@@ -25,7 +35,11 @@ USpoutSenderComponent::USpoutSenderComponent()
 void USpoutSenderComponent::BeginPlay()
 {
     Super::BeginPlay();
-    SpoutBridge.OpenDirectX12();
+
+	if (!SpoutBridge)
+		SpoutBridge = new spoutDX12();
+
+    SpoutBridge->OpenDirectX12();
     if (Auto_Start) {
         StartBroadcast(CurrentRenderTarget, CurrentSenderName, BroadcastFPS);
     }
@@ -33,7 +47,7 @@ void USpoutSenderComponent::BeginPlay()
 
 void USpoutSenderComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    SpoutBridge.CloseDirectX12();
+    SpoutBridge->CloseDirectX12();
     Super::EndPlay(EndPlayReason);
 }
 
@@ -95,14 +109,14 @@ void USpoutSenderComponent::UpdateTexture()
         ID3D12Resource* StagingDX12 = static_cast<ID3D12Resource*>(StagingRHI->GetNativeResource());
         if (!StagingDX12) return;
 
-        if (!SpoutBridge.WrapDX12Resource(StagingDX12, &StagingWrapped11, D3D12_RESOURCE_STATE_GENERIC_READ) || !StagingWrapped11)
+        if (!SpoutBridge->WrapDX12Resource(StagingDX12, &StagingWrapped11, D3D12_RESOURCE_STATE_GENERIC_READ) || !StagingWrapped11)
         {
             return;
         }
     }
 
 	// Send the copied staging texture to Spout
-    SpoutBridge.SendDX11Resource(StagingWrapped11);
+    SpoutBridge->SendDX11Resource(StagingWrapped11);
 #endif
 }
 
@@ -115,7 +129,7 @@ void USpoutSenderComponent::StartBroadcast(UTextureRenderTarget2D* RenderTarget,
     BroadcastFPS = FPS;
 
 	// Set sender name
-    spoutDX12* LocalSpoutBridge = &SpoutBridge;
+    spoutDX12* LocalSpoutBridge = SpoutBridge;
     LocalSpoutBridge->SetSenderName(TCHAR_TO_ANSI(*CurrentSenderName));
 
     // Send once

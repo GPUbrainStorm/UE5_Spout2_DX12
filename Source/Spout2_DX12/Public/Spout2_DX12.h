@@ -22,5 +22,5 @@ public:
 	}
 
 private:
-	spoutDX12 SpoutBridge;
+	void* MyDllHandle = nullptr;
 };
