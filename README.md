@@ -2,36 +2,29 @@
 
 Spout2 plugin for **Unreal Engine 5** using **DirectX 12**.
 
-This plugin enables **Spout sending and receiving** directly from and to Unreal Engine via DX12.
-Works in both editor and packaged builds.
+This plugin enables **Spout sending and receiving** directly in Unreal (Editor & packaged builds).
 
 > **Note:** Beta release.
 
-**Test Environment:**
-Unreal Engine 5.2.1 on Windows with DirectX 12.
+**Tested:** UE **5.2.1** & **5.4.4** on Windows (DX12).
 
 ---
 
-## Installation Instructions
+## Installation
 
 1. **Download**
-   Download the correct version from [Releases](https://github.com/GPUbrainStorm/UE5_Spout2_DX12/releases) then extract the zip into your project's `Plugins` folder:
-   `YourProjectFolder/Plugins`
+   Get the right build from [Releases](https://github.com/GPUbrainStorm/UE5_Spout2_DX12/releases) and extract to:
 
-2. **Copy DLL**
-   Copy `SpoutDX12.dll` from:
-   `Spout2_DX12/Binaries/ThirdParty/Spout2_DX12Library/Win64`
-   to:
-   `UE_5.2/Engine/Binaries/Win64`
+```
+YourProject/Plugins/Spout2_DX12/
+```
 
-3. **Launch**
-   Open your project in Unreal Engine 5.2.1.
+2. **Done** ✅
+   Third-party DLLs and headers are handled automatically. No manual copying to the Engine folder is required.
 
-**For packaged projects:**
-Copy `SpoutDX12.dll` from:
-`Spout2_DX12/Binaries/ThirdParty/Spout2_DX12Library/Win64`
-to your packaged project's binaries folder:
-`Packaged_Project\Windows\Packaged_Project\Binaries\Win64`
+### Packaged builds
+
+DLLs are staged automatically next to the packaged EXE. Just package as usual.
 
 ---
 
@@ -39,66 +32,76 @@ to your packaged project's binaries folder:
 
 ### SpoutSender Component
 
-All Spout functionality is now handled by the **SpoutSender Component**.
+**Add** a `SpoutSender` component to any Actor:
 
-**To use:**
+* Set **Render Target**, **Sender Name**, **FPS**.
+* Enable **Auto_Start** to begin on `BeginPlay`.
 
-* Add a **SpoutSender** component to any Actor.
-* Assign a **Render Target**, **Sender Name**, and **FPS**.
-* Enable **Auto_Start** to begin broadcasting on `BeginPlay`.
-
-**Blueprint Control:**
+**Blueprints**
 
 * `StartBroadcast(RenderTarget, Name, FPS)`
 * `StopBroadcast()`
 
-> Tip: Set `FPS = 0` for a one-time static texture send.
+> Tip: Use `FPS = 0` to push a single frame.
 
-Examples:
+**Examples**
 ![SpoutSender Setup](https://github.com/user-attachments/assets/d18743bb-dab0-4911-a078-d93a9754379b)
 ![Details Panel](https://github.com/user-attachments/assets/e8f0c3ef-590b-46ab-8c72-0596b09f7906)
 ![Blueprint Example](https://github.com/user-attachments/assets/86f2fce1-ffb2-47d6-94f5-4f6561b53ad3)
 
 ---
 
-### SpoutReceiver Component (NEW)
+### SpoutReceiver Component
 
-Introducing the new receiver component to read from senders within Unreal Engine over DX12.
+Receive from any Spout2 sender (OBS Spout plugin, other apps, or another UE instance).
 
-## Blueprint Callable
+**Blueprints**
+
 * `StartReceiving()`
 * `StopReceiving()`
 * `GetAvailableSenders() -> TArray<FString>`
 * `IsConnected() -> bool`
 
-## Key Properties
-* `bAutoStart` — start on BeginPlay.
+**Properties**
+
+* `bAutoStart` — start on `BeginPlay`
 * `OutputRenderTarget` — destination RT
-* `TargetFPS` — receive cadence; `0` = one frame then stop.
-* `SpoutSenderName` — optional explicit sender.
+* `TargetFPS` — receive cadence (`0` = one frame)
+* `SpoutSenderName` — optional explicit sender
 
-All the properties can be set during the runtime after calling `StopReceiving()` and then calling `StartReceiving()` again.
+> You can change properties at runtime; call `StopReceiving()` → update settings → `StartReceiving()`.
 
-**Screenshots:**
-<img width="1571" height="716" alt="image" src="https://github.com/user-attachments/assets/120a29e2-ccdb-47cb-ad1f-ef94c5f379a7" />
-<img width="892" height="565" alt="image" src="https://github.com/user-attachments/assets/83205f90-7f36-42f8-972f-9b1cebe6e875" />
+**Screenshots** <img width="1571" height="716" alt="image" src="https://github.com/user-attachments/assets/120a29e2-ccdb-47cb-ad1f-ef94c5f379a7" /> <img width="892" height="565" alt="image" src="https://github.com/user-attachments/assets/83205f90-7f36-42f8-972f-9b1cebe6e875" />
 
 ---
-## Version 1.0.0 Release Notes
 
-**Summary:**
-Introducing the new receiver component to read from senders within Unreal Engine over DX12.
+## Notes / Requirements
 
-## Blueprint Callable
-* `StartReceiving()`
-* `StopReceiving()`
-* `GetAvailableSenders() -> TArray<FString>`
-* `IsConnected() -> bool`
+* **DX12 only.** (Internally uses D3D12 + D3D11on12.)
 
-## Key Properties
-* `bAutoStart` — start on BeginPlay.
-* `OutputRenderTarget` — destination RT
-* `TargetFPS` — receive cadence; `0` = one frame then stop.
-* `SpoutSenderName` — optional explicit sender.
+---
 
-All the properties can be set during the runtime after calling `StopReceiving()` and then calling `StartReceiving()` again.
+## Compatibility
+
+* **Prebuilt (binary) releases:** UE **5.2.1** and **5.4.4**.
+* **Source:** Should compile for other UE5 minors.
+  If you struggle on a specific version, **open an issue** with the UE version and I’ll try to provide a packaged build ASAP.
+
+---
+
+## Release Notes
+
+### v1.0.1 — 30 Oct 2025
+
+* **Drop-in install:** Third-party **DLLs & headers are handled automatically**. Just copy the plugin into your project’s `Plugins` folder. Works in Editor **and** packaged builds.
+* **Delay-load DLL:** `Spout.dll` / `SpoutDX12.dll` are delay-loaded; no more “module could not be loaded” when DLLs aren’t beside the editor or in the Binaries folder.
+* **Auto DLL discovery:** At runtime the plugin looks in **Plugin/Binaries**, **Project/Binaries**, then **EXE directory** (packaged) — no manual copying to the Engine folder.
+
+### v1.0.0
+
+* Initial **SpoutReceiver** component.
+* Sender improvements and Blueprint calls.
+
+---
+
+**Issues / Requests:** Please open a GitHub issue with logs and your UE version.
