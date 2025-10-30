@@ -83,8 +83,6 @@ void USpoutSenderComponent::UpdateTexture()
         RHICmdList.CopyTexture(Src, Dst, Info);
 
         RHICmdList.Transition(FRHITransitionInfo(Dst, ERHIAccess::CopyDest, ERHIAccess::SRVMask));
-
-        //RHICmdList.ImmediateFlush(EImmediateFlushType::FlushRHIThreadFlushResources);
         });
 
 	// Ensure the copy is done before proceeding

@@ -43,10 +43,10 @@ protected:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-	spoutDX12 SpoutBridge; // Spout DX12 wrapper
-	ID3D11Resource* CurrWrappedResource = nullptr; // wrapped live texture
-	ID3D11Resource* StagingWrapped11 = nullptr; // wrapped staging texture for stable readback
-	FTextureRHIRef StagingRHI; // staging texture RHI
-	int32 StagingW = 0, StagingH = 0; // staging texture size
-	EPixelFormat StagingPF = PF_Unknown; // staging texture format
+	spoutDX12 SpoutBridge;
+	ID3D11Resource* CurrWrappedResource = nullptr;
+	ID3D11Resource* StagingWrapped11 = nullptr;
+	FTextureRHIRef StagingRHI;
+	int32 StagingW = 0, StagingH = 0;
+	EPixelFormat StagingPF = PF_Unknown;
 };

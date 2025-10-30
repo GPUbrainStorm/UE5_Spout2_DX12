@@ -35,7 +35,8 @@ public class Spout2_DX12 : ModuleRules
                 "RenderCore",
                 "RHI",
                 "Slate",
-                "SlateCore"
+                "SlateCore",
+                "D3D12RHI"
 				// ... add other public dependencies that you statically link with here ...
 			}
             );

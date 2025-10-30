@@ -8,6 +8,7 @@
 #include <windows.h>
 #include "Windows/HideWindowsPlatformTypes.h"
 
+DECLARE_LOG_CATEGORY_EXTERN(LogSpoutRX, Log, All);
 
 class SPOUT2_DX12_API FSpout2_DX12Module : public IModuleInterface
 {

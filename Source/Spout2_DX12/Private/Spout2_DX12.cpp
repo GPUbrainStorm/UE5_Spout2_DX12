@@ -17,6 +17,7 @@
 #include "Windows/HideWindowsPlatformTypes.h"
 
 #define LOCTEXT_NAMESPACE "FSpout2_DX12Module"
+DEFINE_LOG_CATEGORY(LogSpoutRX);
 
 // Spout2_DX12 module implementation
 void FSpout2_DX12Module::StartupModule()
