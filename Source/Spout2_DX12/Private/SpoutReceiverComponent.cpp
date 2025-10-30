@@ -4,6 +4,11 @@
 #include "Misc/ScopeLock.h"
 #include <wrl/client.h>   
 #include "Spout2_DX12.h"
+#include "Engine/TextureRenderTarget.h"
+#include "RenderingThread.h"
+#include "RenderCommandFence.h"
+#include "RHICommandList.h"
+#include "TextureResource.h"
 
 using Microsoft::WRL::ComPtr;
 

@@ -9,6 +9,7 @@
 #include "RHICommandList.h"
 #include "RenderResource.h"
 #include "TextureResource.h"
+#include "SpoutDX.h"
 #include "Windows/MinWindows.h"
 #include "Windows/AllowWindowsPlatformTypes.h"
 #include <windows.h>

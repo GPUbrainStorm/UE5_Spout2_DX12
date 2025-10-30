@@ -23,5 +23,4 @@ public:
 
 private:
 	spoutDX12 SpoutBridge;
-	void* SpoutLibraryHandle = nullptr;
 };

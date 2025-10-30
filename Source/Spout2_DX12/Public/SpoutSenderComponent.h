@@ -9,6 +9,10 @@
 #include "Windows/HideWindowsPlatformTypes.h"
 #include "SpoutSenderComponent.generated.h"
 
+// Forward declare Spout classes
+class spoutDX;
+class spoutDX12;
+
 UCLASS(ClassGroup = (Spout), meta = (BlueprintSpawnableComponent))
 class SPOUT2_DX12_API USpoutSenderComponent : public UActorComponent
 {
@@ -43,7 +47,7 @@ protected:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-	spoutDX12 SpoutBridge;
+    spoutDX12 SpoutBridge;
 	ID3D11Resource* CurrWrappedResource = nullptr;
 	ID3D11Resource* StagingWrapped11 = nullptr;
 	FTextureRHIRef StagingRHI;

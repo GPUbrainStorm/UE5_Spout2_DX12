@@ -23,18 +23,7 @@ DEFINE_LOG_CATEGORY(LogSpoutRX);
 void FSpout2_DX12Module::StartupModule()
 {
 #if PLATFORM_WINDOWS
-	// Load SpoutDX12.dll
-	FString BaseDir = IPluginManager::Get().FindPlugin("Spout2_DX12")->GetBaseDir();
-	FString DllPath = FPaths::Combine(*BaseDir, TEXT("Binaries/ThirdParty/Spout2_DX12Library/Win64/SpoutDX12.dll"));
-	SpoutLibraryHandle = FPlatformProcess::GetDllHandle(*DllPath);
-
-	if (!SpoutLibraryHandle)
-	{
-		FMessageDialog::Open(EAppMsgType::Ok, LOCTEXT("SpoutLoadFail", "Failed to load SpoutDX12.dll"));
-		return;
-	}
-
-	// Initialize Spout's DX12 wrapper (creates internal DX12 + DX11on12 devices)
+	// Initialize Spout's DX12 bridge 
 	SpoutBridge.OpenDirectX12();
 #endif
 }
@@ -43,14 +32,8 @@ void FSpout2_DX12Module::StartupModule()
 void FSpout2_DX12Module::ShutdownModule()
 {
 #if PLATFORM_WINDOWS
-	// Close Spout's DX12 wrapper
+	// Close Spout's DX12 bridge
 	SpoutBridge.CloseDirectX12();
-	// Free SpoutDX12.dll
-	if (SpoutLibraryHandle)
-	{
-		FPlatformProcess::FreeDllHandle(SpoutLibraryHandle);
-		SpoutLibraryHandle = nullptr;
-	}
 #endif
 }
 
