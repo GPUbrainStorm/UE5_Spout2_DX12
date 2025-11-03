@@ -45,9 +45,9 @@ DLLs are staged automatically next to the packaged EXE. Just package as usual.
 > Tip: Use `FPS = 0` to push a single frame.
 
 **Examples**
-![SpoutSender Setup](https://github.com/user-attachments/assets/d18743bb-dab0-4911-a078-d93a9754379b)
-![Details Panel](https://github.com/user-attachments/assets/e8f0c3ef-590b-46ab-8c72-0596b09f7906)
-![Blueprint Example](https://github.com/user-attachments/assets/86f2fce1-ffb2-47d6-94f5-4f6561b53ad3)
+<img width="1916" height="660" alt="image" src="https://github.com/user-attachments/assets/34a65bd8-56ad-4617-b94a-25234c41555e" />
+<img width="990" height="471" alt="image" src="https://github.com/user-attachments/assets/42fca5a6-5341-4664-9da9-17ee1c7f5808" />
+
 
 ---
 
