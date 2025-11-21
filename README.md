@@ -91,6 +91,12 @@ Receive from any Spout2 sender (OBS Spout plugin, other apps, or another UE inst
 
 ## Release Notes
 
+### v1.0.2 - 20 Nov 2025
+
+* **Smoother sending:** Replaced per-frame `FlushRenderingCommands()` with a small async GPU task + wait. This avoids flushing the whole render pipeline every frame.
+* **Fixed crash risk:** Removed `CurrWrappedResource->Release()` (which was never set) and now only manage `StagingRHI` and `StagingWrapped11`.
+* **Fixed resource leaks:** `EndPlay` now deletes `SpoutBridge` and clears the staging texture, avoiding leaks when levels or games close.
+
 ### v1.0.1 — 30 Oct 2025
 
 * **Drop-in install:** Third-party **DLLs & headers are handled automatically**. Just copy the plugin into your project’s `Plugins` folder. Works in Editor **and** packaged builds.
