@@ -10,8 +10,9 @@
 #include "RHICommandList.h"
 #include "RenderResource.h"
 #include "TextureResource.h"
+#include "Logging/LogMacros.h"
 
-#if PLATFORM_WINDOWS
+#if PLATFORM_WINDOWS  
 #include "Windows/MinWindows.h"
 
 THIRD_PARTY_INCLUDES_START
@@ -37,7 +38,16 @@ void USpoutSenderComponent::BeginPlay()
 {
     Super::BeginPlay();
 
-#if PLATFORM_WINDOWS
+#if PLATFORM_WINDOWS  
+    // Runtime RHI check – only run on D3D12
+    if (!(GDynamicRHI && FString(GDynamicRHI->GetName()) == TEXT("D3D12")))
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("SpoutSenderComponent: D3D12 RHI is not active (current RHI: %s). Spout DX12 sender is disabled."),
+            GDynamicRHI ? *FString(GDynamicRHI->GetName()) : TEXT("None"));
+        return;
+    }
+
     if (!SpoutBridge)
     {
         SpoutBridge = new spoutDX12();
@@ -56,7 +66,7 @@ void USpoutSenderComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     StopBroadcast();
 
-#if PLATFORM_WINDOWS
+#if PLATFORM_WINDOWS  
     // Make sure all queued render commands that may use SpoutBridge are done
     FlushRenderingCommands();
 
@@ -73,7 +83,7 @@ void USpoutSenderComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void USpoutSenderComponent::UpdateTexture()
 {
-#if PLATFORM_WINDOWS
+#if PLATFORM_WINDOWS  
     if (!SpoutBridge || !CurrentRenderTarget)
         return;
 
@@ -103,7 +113,17 @@ void USpoutSenderComponent::UpdateTexture()
                 ETextureCreateFlags::RenderTargetable |
                 ETextureCreateFlags::Shared);
 
-        StagingRHI = RHICreateTexture(Desc);
+        FRHITextureCreateDesc LocalDesc = Desc;
+
+        ENQUEUE_RENDER_COMMAND(CreateSpoutStagingShared)(
+            [this, LocalDesc](FRHICommandListImmediate& RHICmdList)
+        {
+            StagingRHI.SafeRelease();
+            StagingRHI = RHICreateTexture(LocalDesc);
+        });
+
+        // Wait until the render thread actually creates the texture
+        FlushRenderingCommands();
         StagingW = W;
         StagingH = H;
         StagingPF = PF;
@@ -163,7 +183,7 @@ void USpoutSenderComponent::StartBroadcast(
     const FString& SenderName,
     int32 FPS)
 {
-#if PLATFORM_WINDOWS
+#if PLATFORM_WINDOWS  
     if (!SpoutBridge || !RenderTarget || SenderName.IsEmpty())
     {
         return;
@@ -204,13 +224,52 @@ void USpoutSenderComponent::StopBroadcast()
         World->GetTimerManager().ClearTimer(BroadcastTimerHandle);
     }
 
-#if PLATFORM_WINDOWS
+#if PLATFORM_WINDOWS  
+    // Ensure no render-thread work is still using these textures
+    FlushRenderingCommands();
+
+    if (SpoutBridge)
+    {
+        // [Unverified] Standard SpoutDX12 API usually has ReleaseSender().
+        // If your class uses a different name, replace this call.
+        SpoutBridge->ReleaseSender();
+        SpoutBridge->SetSenderName(""); // optional: clear name explicitly
+    }
+
     StagingRHI.SafeRelease();
+    StagingWrapped11 = nullptr;
     StagingW = 0;
     StagingH = 0;
     StagingPF = PF_Unknown;
 
     CurrentRenderTarget = nullptr;
     CurrentSenderName.Empty();
+    BroadcastFPS = 0;
+#endif
+}
+
+// New: change render target at runtime
+void USpoutSenderComponent::ChangeRenderTarget(UTextureRenderTarget2D* NewRenderTarget)
+{
+#if PLATFORM_WINDOWS  
+    if (NewRenderTarget == CurrentRenderTarget)
+    {
+        return;
+    }
+
+    CurrentRenderTarget = NewRenderTarget;
+
+    // Force staging recreation on next UpdateTexture()
+    StagingRHI.SafeRelease();
+    StagingWrapped11 = nullptr;
+    StagingW = 0;
+    StagingH = 0;
+    StagingPF = PF_Unknown;
+
+    // Optionally send one frame immediately if we are actively broadcasting
+    if (BroadcastFPS > 0 && CurrentRenderTarget)
+    {
+        UpdateTexture();
+    }
 #endif
 }

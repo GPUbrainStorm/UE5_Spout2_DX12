@@ -21,8 +21,6 @@ class SPOUT2_DX12_API USpoutSenderComponent : public UActorComponent
 public:
     USpoutSenderComponent();
 
-    UFUNCTION(BlueprintCallable, Category = "Spout")
-
 	void UpdateTexture();
 
     UFUNCTION(BlueprintCallable, Category = "Spout")
@@ -31,10 +29,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Spout")
     void StopBroadcast();
 
+    UFUNCTION(BlueprintCallable, Category = "Spout")
+    void ChangeRenderTarget(UTextureRenderTarget2D* NewRenderTarget);
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
     bool Auto_Start = true;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
-    FString CurrentSenderName = "Component Broadcast";
+    FString CurrentSenderName = "Broadcast Component";
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
     UTextureRenderTarget2D* CurrentRenderTarget = nullptr;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")

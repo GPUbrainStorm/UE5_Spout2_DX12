@@ -10,7 +10,7 @@
 class spoutDX;
 class spoutDX12;
 
-UCLASS(ClassGroup = (Rendering), meta = (BlueprintSpawnableComponent))
+UCLASS(ClassGroup = (Spout), meta = (BlueprintSpawnableComponent))
 class USpoutReceiverComponent : public UActorComponent
 {
 	GENERATED_BODY()
