@@ -1,6 +1,9 @@
 # UE5_Spout2_DX12
 
 Spout2 plugin for **Unreal Engine 5** using **DirectX 12**.
+You can join the discord server for futher support from the following link:
+**https://discord.gg/BxHRHDdkNy**
+
 
 This plugin enables **Spout sending and receiving** directly in Unreal (Editor & packaged builds).
 
