@@ -1,5 +1,3 @@
-<img width="1919" height="1029" alt="image" src="https://github.com/user-attachments/assets/a85ee026-78c6-42cf-a096-438843f1db4c" /># UE5_Spout2_DX12
-
 Spout2 plugin for **Unreal Engine 5** using **DirectX 12**.
 You can join the discord server for futher support from the following link:
 **https://discord.gg/BxHRHDdkNy**
