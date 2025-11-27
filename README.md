@@ -1,4 +1,4 @@
-# UE5_Spout2_DX12
+<img width="1919" height="1029" alt="image" src="https://github.com/user-attachments/assets/a85ee026-78c6-42cf-a096-438843f1db4c" /># UE5_Spout2_DX12
 
 Spout2 plugin for **Unreal Engine 5** using **DirectX 12**.
 You can join the discord server for futher support from the following link:
@@ -9,7 +9,7 @@ This plugin enables **Spout sending and receiving** directly in Unreal (Editor &
 
 > **Note:** Beta release.
 
-**Tested:** UE **5.2.1** & **5.4.4** on Windows (DX12).
+**Tested:** UE **5.2.1** , **5.4.4** & **5.7.0** on Windows (DX12).
 
 ---
 
@@ -86,7 +86,7 @@ Receive from any Spout2 sender (OBS Spout plugin, other apps, or another UE inst
 
 ## Compatibility
 
-* **Prebuilt (binary) releases:** UE **5.2.1** and **5.4.4**.
+* **Prebuilt (binary) releases:** UE **5.2.1**, **5.4.4** and **5.7.0**.
 * **Source:** Should compile for other UE5 minors.
   If you struggle on a specific version, **open an issue** with the UE version and I’ll try to provide a packaged build ASAP.
 
