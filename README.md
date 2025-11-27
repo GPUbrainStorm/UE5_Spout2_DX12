@@ -1,3 +1,5 @@
+<img width="268" height="269" alt="logo" src="https://github.com/user-attachments/assets/8afeb86f-cbe7-400b-8002-252ed8121854" />
+
 Spout2 plugin for **Unreal Engine 5** using **DirectX 12**.
 You can join the discord server for futher support from the following link:
 **https://discord.gg/BxHRHDdkNy**
