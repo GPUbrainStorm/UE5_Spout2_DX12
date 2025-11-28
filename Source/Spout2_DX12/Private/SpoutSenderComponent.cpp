@@ -12,22 +12,35 @@
 #include "TextureResource.h"
 #include "Logging/LogMacros.h"
 
-#if PLATFORM_WINDOWS  
-#include "Windows/MinWindows.h"
+#if PLATFORM_WINDOWS
+#include "Windows/WindowsHWrapper.h"
 
 THIRD_PARTY_INCLUDES_START
 #include "Windows/AllowWindowsPlatformTypes.h"
-#include <Windows.h>
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include <d3d11.h>
 #include <d3d12.h>
 #include <d3d11on12.h>
 #include <dxgi.h>
-#include "Windows/HideWindowsPlatformTypes.h"
 
 #include "SpoutDX.h"
 #include "SpoutDX12.h"
+
+#ifdef max
+#undef max
+#endif
+#ifdef min
+#undef min
+#endif
+
+#include "Windows/HideWindowsPlatformTypes.h"
 THIRD_PARTY_INCLUDES_END
 #endif
+
 
 USpoutSenderComponent::USpoutSenderComponent()
 {

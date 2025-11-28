@@ -7,14 +7,39 @@
 #include "Engine/Engine.h"
 #include "EngineGlobals.h"
 #include "RenderingThread.h"
-#include "SpoutDX12.h"
 #include "Modules/ModuleManager.h"
 #include "CoreMinimal.h"
 #include "Misc/Paths.h"
 #include "TextureResource.h"
+
+#if PLATFORM_WINDOWS
+#include "Windows/WindowsHWrapper.h"
+
+THIRD_PARTY_INCLUDES_START
 #include "Windows/AllowWindowsPlatformTypes.h"
-#include <windows.h>
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#include <d3d11.h>
+#include <d3d12.h>
+#include <d3d11on12.h>
+#include <dxgi.h>
+
+// include Spout only *here*, never above
+#include "SpoutDX12.h"
+
+#ifdef max
+#undef max
+#endif
+#ifdef min
+#undef min
+#endif
+
 #include "Windows/HideWindowsPlatformTypes.h"
+THIRD_PARTY_INCLUDES_END
+#endif
 
 #define LOCTEXT_NAMESPACE "FSpout2_DX12Module"
 DEFINE_LOG_CATEGORY(LogSpoutRX);

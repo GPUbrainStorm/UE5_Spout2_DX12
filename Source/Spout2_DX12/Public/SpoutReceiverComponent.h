@@ -4,6 +4,7 @@
 #include "Components/ActorComponent.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/Texture2D.h"
+#include "RHIResources.h"
 #include "SpoutReceiverComponent.generated.h"
 
 // Forward declare Spout classes

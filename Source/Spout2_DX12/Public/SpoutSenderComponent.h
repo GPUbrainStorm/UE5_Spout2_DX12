@@ -2,12 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "SpoutDX12.h"
-#include "Windows/AllowWindowsPlatformTypes.h"
-#include <windows.h>
+#include "Engine/TextureRenderTarget2D.h"
 #include "RHIResources.h"
-#include "Windows/HideWindowsPlatformTypes.h"
 #include "SpoutSenderComponent.generated.h"
+
+struct ID3D11Resource;
 
 // Forward declare Spout classes
 class spoutDX;

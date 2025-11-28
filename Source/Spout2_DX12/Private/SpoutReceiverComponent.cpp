@@ -2,7 +2,6 @@
 #include "RHI.h"
 #include "Logging/LogMacros.h"
 #include "Misc/ScopeLock.h"
-#include <wrl/client.h>   
 #include "Spout2_DX12.h"
 #include "Engine/TextureRenderTarget.h"
 #include "RenderingThread.h"
@@ -10,19 +9,38 @@
 #include "RHICommandList.h"
 #include "TextureResource.h"
 
-using Microsoft::WRL::ComPtr;
+#if PLATFORM_WINDOWS
+#include "Windows/WindowsHWrapper.h"
 
 THIRD_PARTY_INCLUDES_START
 #include "Windows/AllowWindowsPlatformTypes.h"
-#include <Windows.h>
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#include <wrl/client.h>  
+
 #include <d3d11.h>
 #include <d3d12.h>
 #include <d3d11on12.h>
 #include <dxgi.h>
-#include "Windows/HideWindowsPlatformTypes.h"
+
 #include "SpoutDX.h"
 #include "SpoutDX12.h"
+
+#ifdef max
+#undef max
+#endif
+#ifdef min
+#undef min
+#endif
+
+#include "Windows/HideWindowsPlatformTypes.h"
 THIRD_PARTY_INCLUDES_END
+#endif
+
+using Microsoft::WRL::ComPtr;
 
 static EPixelFormat MapDxgiToUE(DXGI_FORMAT fmt) {
 	switch (fmt) {
