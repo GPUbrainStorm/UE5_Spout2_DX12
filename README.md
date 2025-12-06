@@ -94,6 +94,9 @@ Receive from any Spout2 sender (OBS Spout plugin, other apps, or another UE inst
 
 ## Release Notes
 
+### v1.0.3 – 26 Nov 2025
+* **Fixed crash issue:**Fixed a crash issue on UE5.4 and later versions caused by running some code on the game thread instead of the rendering thread.
+
 ### v1.0.2 - 20 Nov 2025
 
 * **Smoother sending:** Replaced per-frame `FlushRenderingCommands()` with a small async GPU task + wait. This avoids flushing the whole render pipeline every frame.
