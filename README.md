@@ -92,28 +92,4 @@ Receive from any Spout2 sender (OBS Spout plugin, other apps, or another UE inst
 
 ---
 
-## Release Notes
-
-### v1.0.3 – 26 Nov 2025
-* **Fixed crash issue:**Fixed a crash issue on UE5.4 and later versions caused by running some code on the game thread instead of the rendering thread.
-
-### v1.0.2 - 20 Nov 2025
-
-* **Smoother sending:** Replaced per-frame `FlushRenderingCommands()` with a small async GPU task + wait. This avoids flushing the whole render pipeline every frame.
-* **Fixed crash risk:** Removed `CurrWrappedResource->Release()` (which was never set) and now only manage `StagingRHI` and `StagingWrapped11`.
-* **Fixed resource leaks:** `EndPlay` now deletes `SpoutBridge` and clears the staging texture, avoiding leaks when levels or games close.
-
-### v1.0.1 — 30 Oct 2025
-
-* **Drop-in install:** Third-party **DLLs & headers are handled automatically**. Just copy the plugin into your project’s `Plugins` folder. Works in Editor **and** packaged builds.
-* **Delay-load DLL:** `Spout.dll` / `SpoutDX12.dll` are delay-loaded; no more “module could not be loaded” when DLLs aren’t beside the editor or in the Binaries folder.
-* **Auto DLL discovery:** At runtime the plugin looks in **Plugin/Binaries**, **Project/Binaries**, then **EXE directory** (packaged) — no manual copying to the Engine folder.
-
-### v1.0.0
-
-* Initial **SpoutReceiver** component.
-* Sender improvements and Blueprint calls.
-
----
-
 **Issues / Requests:** Please open a GitHub issue with logs and your UE version.
