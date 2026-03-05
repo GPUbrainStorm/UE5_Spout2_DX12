@@ -44,7 +44,7 @@ THIRD_PARTY_INCLUDES_END
 
 USpoutSenderComponent::USpoutSenderComponent()
 {
-    PrimaryComponentTick.bCanEverTick = false; // driven by timer
+    PrimaryComponentTick.bCanEverTick = false; // Timer drives updates.
 }
 
 void USpoutSenderComponent::BeginPlay()
@@ -52,7 +52,7 @@ void USpoutSenderComponent::BeginPlay()
     Super::BeginPlay();
 
 #if PLATFORM_WINDOWS  
-    // Runtime RHI check – only run on D3D12
+    // Run only on D3D12.
     if (!(GDynamicRHI && FString(GDynamicRHI->GetName()) == TEXT("D3D12")))
     {
         UE_LOG(LogTemp, Warning,
@@ -80,7 +80,7 @@ void USpoutSenderComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
     StopBroadcast();
 
 #if PLATFORM_WINDOWS  
-    // Make sure all queued render commands that may use SpoutBridge are done
+    // Wait for queued render work that may still use SpoutBridge.
     FlushRenderingCommands();
 
     if (SpoutBridge)
@@ -100,7 +100,7 @@ void USpoutSenderComponent::UpdateTexture()
     if (!SpoutBridge || !CurrentRenderTarget)
         return;
 
-    // Game thread: Get source RT resource
+    // Game thread: get source render target resource.
     FTextureRenderTargetResource* RTRes = CurrentRenderTarget->GameThread_GetRenderTargetResource();
     if (!RTRes)
         return;
@@ -113,12 +113,16 @@ void USpoutSenderComponent::UpdateTexture()
     const int32 H = CurrentRenderTarget->SizeY;
     const EPixelFormat PF = CurrentRenderTarget->GetFormat();
 
-    // Recreate staging RHI texture if needed
+    // Recreate staging texture when size or format changes.
     const bool NeedCreate = (!StagingRHI.IsValid() || W != StagingW || H != StagingH || PF != StagingPF);
     if (NeedCreate)
     {
         StagingRHI.SafeRelease();
-        StagingWrapped11 = nullptr;
+        if (StagingWrapped11)
+        {
+            StagingWrapped11->Release();
+            StagingWrapped11 = nullptr;
+        }
 
         FRHITextureCreateDesc Desc =
             FRHITextureCreateDesc::Create2D(TEXT("SpoutStagingShared"), W, H, PF)
@@ -135,7 +139,7 @@ void USpoutSenderComponent::UpdateTexture()
             StagingRHI = RHICreateTexture(LocalDesc);
         });
 
-        // Wait until the render thread actually creates the texture
+        // Wait until the render thread creates the texture.
         FlushRenderingCommands();
         StagingW = W;
         StagingH = H;
@@ -148,7 +152,7 @@ void USpoutSenderComponent::UpdateTexture()
     FTextureRHIRef LocalSrc = SrcRHI;
     FTextureRHIRef LocalDst = StagingRHI;
 
-    // Create a GPU fence to wait for copy to complete
+    // Queue a copy and wait until it finishes.
     FGraphEventRef CopyDoneEvent = FFunctionGraphTask::CreateAndDispatchWhenReady(
         [LocalSrc, LocalDst]()
     {
@@ -172,10 +176,10 @@ void USpoutSenderComponent::UpdateTexture()
         ENamedThreads::AnyBackgroundThreadNormalTask
     );
 
-    // Game thread waits for render-thread copy without flushing whole command buffer
+    // Wait for the render-thread copy.
     CopyDoneEvent->Wait();
 
-    // Now safe to wrap and send on GAME THREAD
+    // After copy, wrap and send on the game thread.
     if (!StagingWrapped11)
     {
         ID3D12Resource* NativeDX12 = (ID3D12Resource*)StagingRHI->GetNativeResource();
@@ -208,7 +212,7 @@ void USpoutSenderComponent::StartBroadcast(
 
     SpoutBridge->SetSenderName(TCHAR_TO_ANSI(*CurrentSenderName));
 
-    // Send one frame immediately
+    // Send one frame now.
     UpdateTexture();
 
     if (FPS <= 0)
@@ -238,19 +242,22 @@ void USpoutSenderComponent::StopBroadcast()
     }
 
 #if PLATFORM_WINDOWS  
-    // Ensure no render-thread work is still using these textures
+    // Wait so no render-thread work still uses these textures.
     FlushRenderingCommands();
 
     if (SpoutBridge)
     {
-        // [Unverified] Standard SpoutDX12 API usually has ReleaseSender().
-        // If your class uses a different name, replace this call.
+        // Release current sender resources.
         SpoutBridge->ReleaseSender();
         SpoutBridge->SetSenderName(""); // optional: clear name explicitly
     }
 
     StagingRHI.SafeRelease();
-    StagingWrapped11 = nullptr;
+    if (StagingWrapped11)
+    {
+        StagingWrapped11->Release();
+        StagingWrapped11 = nullptr;
+    }
     StagingW = 0;
     StagingH = 0;
     StagingPF = PF_Unknown;
@@ -261,7 +268,7 @@ void USpoutSenderComponent::StopBroadcast()
 #endif
 }
 
-// New: change render target at runtime
+// Change render target at runtime.
 void USpoutSenderComponent::ChangeRenderTarget(UTextureRenderTarget2D* NewRenderTarget)
 {
 #if PLATFORM_WINDOWS  
@@ -272,14 +279,18 @@ void USpoutSenderComponent::ChangeRenderTarget(UTextureRenderTarget2D* NewRender
 
     CurrentRenderTarget = NewRenderTarget;
 
-    // Force staging recreation on next UpdateTexture()
+    // Force staging texture recreate on next UpdateTexture().
     StagingRHI.SafeRelease();
-    StagingWrapped11 = nullptr;
+    if (StagingWrapped11)
+    {
+        StagingWrapped11->Release();
+        StagingWrapped11 = nullptr;
+    }
     StagingW = 0;
     StagingH = 0;
     StagingPF = PF_Unknown;
 
-    // Optionally send one frame immediately if we are actively broadcasting
+    // If broadcasting, send one frame now.
     if (BroadcastFPS > 0 && CurrentRenderTarget)
     {
         UpdateTexture();

@@ -78,7 +78,7 @@ static bool IsDXGISRGB(DXGI_FORMAT f) {
 		f == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 }
 
-// Spout Receiver Component constructor / destructor
+// Constructor / destructor.
 USpoutReceiverComponent::USpoutReceiverComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
@@ -91,7 +91,7 @@ USpoutReceiverComponent::~USpoutReceiverComponent()
 	ReleaseSpoutDevices();
 }
 
-// Calculate Interval from TargetFPS, init spout devices and auto-start if needed
+// Set interval, init Spout, and auto-start if enabled.
 void USpoutReceiverComponent::BeginPlay()
 {
 	Super::BeginPlay();
@@ -112,7 +112,7 @@ void USpoutReceiverComponent::BeginPlay()
 	}
 }
 
-// Cleanup on end play
+// Cleanup on end play.
 void USpoutReceiverComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopReceiving();
@@ -120,7 +120,7 @@ void USpoutReceiverComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-// Per-tick update
+// Tick update.
 void USpoutReceiverComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -137,7 +137,7 @@ void USpoutReceiverComponent::TickComponent(float DeltaTime, enum ELevelTick Tic
 
 }
 
-// Start receiving from Spout sender
+// Start receiving from Spout sender.
 void USpoutReceiverComponent::StartReceiving()
 {
 	if (!SpoutDX12 && !InitSpoutDevices())
@@ -152,7 +152,7 @@ void USpoutReceiverComponent::StartReceiving()
 		return;
 	}
 
-	// Set the sender name if specified, else use the active sender
+	// Use selected sender name, or active sender if empty.
 	if (!SpoutSenderName.IsEmpty())
 	{
 		SpoutDX12->SetReceiverName(TCHAR_TO_ANSI(*SpoutSenderName));
@@ -167,7 +167,7 @@ void USpoutReceiverComponent::StartReceiving()
 		}
 	}
 
-	// Calculate TargetInterval from TargetFPS
+	// Recompute interval from TargetFPS.
 	if (TargetFPS > 0) {
 		TargetFPS = FMath::Clamp(TargetFPS, 1, 240);
 		TargetInterval = 1.0f / float(TargetFPS);
@@ -176,18 +176,18 @@ void USpoutReceiverComponent::StartReceiving()
 		TargetInterval = 0.f;
 	}
 
-	// Start receiving
+	// Mark receiver as running.
 	bReceiving = true;
 	UE_LOG(LogSpoutRX, Display, TEXT("Spout receiver started @ %d FPS"), TargetFPS);
 }
 
-// Stop receiving from Spout sender
+// Stop receiving from Spout sender.
 void USpoutReceiverComponent::StopReceiving()
 {
-	// Stop receiving
+	// Mark receiver as stopped.
 	bReceiving = false;
 	
-	// Release all resources and close Spout devices
+	// Release resources and close Spout devices.
 	if (Incoming.WrappedDest11)
 	{
 		reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11)->Release();
@@ -209,7 +209,7 @@ void USpoutReceiverComponent::StopReceiving()
 	bConnected = false;
 }
 
-// Get a list of available Spout senders
+// Return available Spout senders.
 TArray<FString> USpoutReceiverComponent::GetAvailableSenders() const
 {
 	TArray<FString> Out;
@@ -229,7 +229,7 @@ TArray<FString> USpoutReceiverComponent::GetAvailableSenders() const
 	return Out;
 }
 
-// Initialize Spout devices
+// Initialize Spout objects.
 bool USpoutReceiverComponent::InitSpoutDevices()
 {
 	if (!SpoutInfo)
@@ -239,7 +239,7 @@ bool USpoutReceiverComponent::InitSpoutDevices()
 	return (SpoutInfo && SpoutDX12);
 }
 
-// Release Spout devices and resources, delete Spout objects
+// Release resources and delete Spout objects.
 void USpoutReceiverComponent::ReleaseSpoutDevices()
 {
 	if (Incoming.WrappedDest11)
@@ -267,7 +267,7 @@ void USpoutReceiverComponent::ReleaseSpoutDevices()
 	}
 }
 
-// Receive once from Spout sender and copy to UE render target
+// Receive one frame and copy it to UE render target.
 bool USpoutReceiverComponent::ReceiveOnce()
 {
 	UE_LOG(LogSpoutRX, Verbose, TEXT("ReceiveOnce: ENTER"));
@@ -280,7 +280,7 @@ bool USpoutReceiverComponent::ReceiveOnce()
 
 	UE_LOG(LogSpoutRX, Verbose, TEXT("ReceiveOnce: begin"));
 
-	// Get sender info from Spout
+	// Read sender info from Spout.
 	unsigned int SW = 0, SH = 0; HANDLE Share = nullptr; DWORD Fmt = 0;
 	{
 		const char* Name = SpoutDX12->GetSenderName();
@@ -298,7 +298,7 @@ bool USpoutReceiverComponent::ReceiveOnce()
 			Name, SW, SH, Incoming.Format, Share);
 	}
 
-	// Open the shared DX11 texture from the sender
+	// Open shared DX11 texture from sender.
 	ID3D11Device* Dev11 = SpoutDX12 ? SpoutDX12->GetD3D11device() : nullptr;
 	ID3D11DeviceContext* Ctx11 = SpoutDX12 ? SpoutDX12->GetD3D11context() : nullptr;
 	if (!Dev11 || !Ctx11)
@@ -320,19 +320,19 @@ bool USpoutReceiverComponent::ReceiveOnce()
 		UE_LOG(LogSpoutRX, Verbose, TEXT("Src11: %ux%u fmt=%u mips=%u"), sDesc.Width, sDesc.Height, sDesc.Format, sDesc.MipLevels);
 	}
 
-	// create or resize the intermediate GPU copy texture if needed
+	// Create or resize intermediate GPU copy texture if needed.
 	D3D11_TEXTURE2D_DESC sDesc{};
 	Src11->GetDesc(&sDesc);
 	Incoming.Format = sDesc.Format;
 
-	// Validate source desc and format
+	// Validate source texture description and format.
 	if (sDesc.Width == 0 || sDesc.Height == 0 || sDesc.Format == DXGI_FORMAT_UNKNOWN) {
 		UE_LOG(LogSpoutRX, Error, TEXT("Invalid Src11 desc: %ux%u fmt=%u"), sDesc.Width, sDesc.Height, sDesc.Format);
 		return false;
 	}
 	const DXGI_FORMAT copyFmt = sDesc.Format;
 
-	// Get current copy desc and check if we need to recreate
+	// Check if copy texture must be recreated.
 	D3D11_TEXTURE2D_DESC curDesc{};
 	if (Incoming.GPUCopy11) {
 		reinterpret_cast<ID3D11Texture2D*>(Incoming.GPUCopy11)->GetDesc(&curDesc);
@@ -351,7 +351,7 @@ bool USpoutReceiverComponent::ReceiveOnce()
 			Incoming.GPUCopy11 = nullptr;
 		}
 
-		// Match source desc (format/size). CopyResource requires identical format.
+		// Match source format and size. CopyResource needs exact match.
 		D3D11_TEXTURE2D_DESC d{};
 		d.Width = sDesc.Width;
 		d.Height = sDesc.Height;
@@ -365,7 +365,7 @@ bool USpoutReceiverComponent::ReceiveOnce()
 		d.CPUAccessFlags = 0;
 		d.MiscFlags = 0;
 
-		// Create the copy texture
+		// Create copy texture.
 		ComPtr<ID3D11Texture2D> copyTex;
 		HRESULT hr = Dev11->CreateTexture2D(&d, nullptr, copyTex.GetAddressOf());
 		if (FAILED(hr) || !copyTex) {
@@ -374,19 +374,19 @@ bool USpoutReceiverComponent::ReceiveOnce()
 			return false;
 		}
 
-		// Store the created texture
+		// Store created texture.
 		Incoming.GPUCopy11 = copyTex.Detach();
 		UE_LOG(LogSpoutRX, Verbose, TEXT("GPUCopy11 created %ux%u fmt=%u"), d.Width, d.Height, d.Format);
 	}
 
 
-	// Copy from Src11 (shared sender) to GPUCopy11 (UE DX11 copy)
+	// Copy sender texture to local DX11 copy texture.
 	Ctx11->CopyResource(
 		reinterpret_cast<ID3D11Resource*>(Incoming.GPUCopy11), // Dst
 		Src11.Get()                                            // Src
 	);
 
-	// Ensure the UE render target is valid and wrapped for DX11
+	// Ensure UE render target exists and is wrapped for DX11.
 	bool bDestOK = false;
 	if (OutputRenderTarget) {
 		bDestOK = EnsureGpuRenderTarget(Incoming.Width, Incoming.Height);
@@ -396,11 +396,11 @@ bool USpoutReceiverComponent::ReceiveOnce()
 		return false;
 	}
 		
-	// Check if the Render Target is ready and the wrapped resource is valid
+	// Check wrapped destination resource.
 	if (!bDestOK) { UE_LOG(LogSpoutRX, Error, TEXT("ReceiveOnce: ensure dest failed")); return false; }
 	if (!Incoming.WrappedDest11) { UE_LOG(LogSpoutRX, Error, TEXT("ReceiveOnce: WrappedDest11 null")); return false; }
 
-	// Copy from our GPUCopy11 (DX11) to the wrapped UE render target (DX11 on D3D11On12)
+	// Copy local DX11 texture to wrapped UE render target.
 	ID3D11On12Device* D3D11On12 = USpoutReceiverComponent::GetD3D11On12(SpoutDX12);
 	if (!D3D11On12)
 	{
@@ -408,7 +408,7 @@ bool USpoutReceiverComponent::ReceiveOnce()
 		return false;
 	}
 
-	// Acquire the wrapped resource, perform the copy, release it
+	// Acquire wrapped resource, copy, then release it.
 	ID3D11Resource* ToAcquire[1] = { reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11) };
 	D3D11On12->AcquireWrappedResources(ToAcquire, 1);
 
@@ -418,100 +418,100 @@ bool USpoutReceiverComponent::ReceiveOnce()
 	);
 
 	D3D11On12->ReleaseWrappedResources(ToAcquire, 1);
-	// Flush to ensure copy is done
+	// Flush to finish copy now.
 	Ctx11->Flush();
 	UE_LOG(LogSpoutRX, Verbose, TEXT("Copy submitted + Flush"));
-	// Complete
+	// Mark as connected.
 	bConnected = true;
 	UE_LOG(LogSpoutRX, Verbose, TEXT("ReceiveOnce!"));
 
-	// If TargetFPS is zero or less, stop receiving after one frame
+	// If TargetFPS <= 0, receive one frame then stop.
 	if (TargetFPS <= 0) {
 		StopReceiving();
 	}
 	return true;
 }
 
-// Ensure the UE render target is valid and wrapped for DX11
+// Ensure UE render target exists and is wrapped for DX11.
 bool USpoutReceiverComponent::EnsureGpuRenderTarget(uint32 W, uint32 H)
 {
 	if (!OutputRenderTarget) return false;
-	// Determine needed pixel format and gamma
+	// Pick needed pixel format and gamma.
 	const EPixelFormat NeededPF = MapDxgiToUE(static_cast<DXGI_FORMAT>(Incoming.Format));
 	const bool bUseLinearGamma = !IsDXGISRGB(static_cast<DXGI_FORMAT>(Incoming.Format));
-	// Check if we need to re-init the render target
+	// Check if render target needs reinit.
 	bool bReinit = false;
-	// Always re-init to enforce exact PF/size (safe & simple)
+	// Reinit only when size changes.
 	if ((uint32)OutputRenderTarget->SizeX != W ||
 		(uint32)OutputRenderTarget->SizeY != H) {
 		bReinit = true;
 	}
-	// reinit if format or gamma differ
+	// Reinit texture when needed.
 	if (bReinit) {
 		OutputRenderTarget->InitCustomFormat(W, H, NeededPF, bUseLinearGamma);
 		OutputRenderTarget->UpdateResourceImmediate(true);
 		FlushRenderingCommands();
 	}
 
-	// Release old D3D11 wrapper if it exists
+	// Release old D3D11 wrapper if it exists.
 	if (Incoming.WrappedDest11) {
 		reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11)->Release();
 		Incoming.WrappedDest11 = nullptr;
 	}
 	
-	// Get the render target resource from game thread
+	// Get render target resource on game thread.
 	FTextureRenderTargetResource* RTRes = OutputRenderTarget->GameThread_GetRenderTargetResource();
 	if (!RTRes) {
 		UE_LOG(LogSpoutRX, Display, TEXT("EnsureGpuRT: no RT resource (game thread)"));
 		return false;
 	}
 
-	// Enqueue render command to wrap the UE render target texture for DX11
+	// Queue render command to wrap UE render target for DX11.
 	FRenderCommandFence Fence;
 	bool bWrapOk = false;
 
-	// Capture RTRes by value for the render thread
+	// Use RTRes on render thread.
 	ENQUEUE_RENDER_COMMAND(WrapSpoutRT)(
 		[this, RTRes, &bWrapOk](FRHICommandListImmediate& RHICmdList)
 	{
-		// Get the RHI texture from the render target resource
+		// Get RHI texture.
 		FRHITexture* RHI = RTRes->GetRenderTargetTexture();
 		if (!RHI) {
 			UE_LOG(LogSpoutRX, Display, TEXT("EnsureGpuRT: no RHI texture (render thread)"));
 			bWrapOk = false; return;
 		}
-		// Get the native D3D12 resource
+		// Get native D3D12 resource.
 		ID3D12Resource* DestDX12 = (ID3D12Resource*)RHI->GetNativeResource();
 		if (!DestDX12) {
 			UE_LOG(LogSpoutRX, Display, TEXT("EnsureGpuRT: no native D3D12 (render thread)"));
 			bWrapOk = false; return;
 		}
-		// Wrap the D3D12 resource for DX11 use
+		// Wrap D3D12 resource for DX11 use.
 		ID3D11Resource* Wrapped = nullptr;
 		if (!SpoutDX12->WrapDX12Resource(DestDX12, &Wrapped, D3D12_RESOURCE_STATE_COPY_DEST)) {
 			UE_LOG(LogSpoutRX, Display, TEXT("EnsureGpuRT: WrapDX12Resource failed"));
 			bWrapOk = false; return;
 		}
-		// Store the wrapped resource
+		// Store wrapped resource.
 		Incoming.WrappedDest11 = Wrapped;
 		bWrapOk = true;
 	});
-	// Wait for the render command to complete
+	// Wait for render command to finish.
 	Fence.BeginFence();
 	Fence.Wait(false);
 
 	UE_LOG(LogSpoutRX, Verbose, TEXT("EnsureGpuRenderTarget: %ux%u resized=%d wrap=%d"),
 		W, H, bReinit ? 1 : 0, bWrapOk ? 1 : 0);
-	// Return whether wrapping succeeded
+	// Return wrap result.
 	return bWrapOk;
 }
-// Get the UE D3D12 device
+// Get UE D3D12 device.
 ID3D12Device* USpoutReceiverComponent::GetUE_D3D12Device()
 {
 	void* Native = GDynamicRHI ? GDynamicRHI->RHIGetNativeDevice() : nullptr;
 	return reinterpret_cast<ID3D12Device*>(Native);
 }
-// Get the D3D11On12 device from spoutDX12
+// Get D3D11On12 device from SpoutDX12.
 ID3D11On12Device* USpoutReceiverComponent::GetD3D11On12(spoutDX12* InDX12)
 {
 	return InDX12 ? InDX12->GetD3D11On12device() : nullptr;

@@ -56,7 +56,7 @@ public class Spout2_DX12 : ModuleRules
             PublicAdditionalLibraries.Add(Path.Combine(LibDir, "Spout.lib"));
             PublicAdditionalLibraries.Add(Path.Combine(LibDir, "SpoutDX12.lib"));
 
-            // TRUE delay-load (NAMES ONLY — no paths)
+            // Delay-load by DLL names only (no paths).
             PublicDelayLoadDLLs.AddRange(new[] { "Spout.dll", "SpoutDX12.dll" });
 
             // Place alongside built target binaries

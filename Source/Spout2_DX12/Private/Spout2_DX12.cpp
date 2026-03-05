@@ -54,12 +54,18 @@ void FSpout2_DX12Module::StartupModule()
     Dirs.Add(FPaths::Combine(FPaths::ProjectDir(), TEXT("Binaries/Win64")));               // project binaries (Editor)
     Dirs.Add(FPlatformProcess::BaseDir());
 
-    // Load the DLL
+    // Try known folders one by one.
+    // Always pop after push so we do not leave extra DLL dirs on the process stack.
     for (const FString& Dir : Dirs) {
         FPlatformProcess::PushDllDirectory(*Dir);
-		MyDllHandle = MyDllHandle ? MyDllHandle : FPlatformProcess::GetDllHandle(TEXT("SpoutDX12.dll"));
-		if (MyDllHandle) break;
-		FPlatformProcess::PopDllDirectory(*Dir);
+        void* TryHandle = FPlatformProcess::GetDllHandle(TEXT("SpoutDX12.dll"));
+        FPlatformProcess::PopDllDirectory(*Dir);
+
+        if (TryHandle)
+        {
+            MyDllHandle = TryHandle;
+            break;
+        }
     }
     if (MyDllHandle == nullptr)
     {
