@@ -10,6 +10,7 @@
 // Forward declare Spout classes
 class spoutDX;
 class spoutDX12;
+class FTextureRenderTargetResource;
 
 UCLASS(ClassGroup = (Spout), meta = (BlueprintSpawnableComponent))
 class USpoutReceiverComponent : public UActorComponent
@@ -62,12 +63,19 @@ private:
 	// Spout objects
 	spoutDX* SpoutInfo = nullptr;
 	spoutDX12* SpoutDX12 = nullptr;
+	// NEW: cache which RT resource we wrapped (wrap only when RT resource changes/recreates)
+	FTextureRenderTargetResource* CachedRTRes = nullptr;
+	UTextureRenderTarget2D* CachedRTObject = nullptr;
 
 	// Incoming sender info + resources
 	struct FIncoming
 	{
 		void* WrappedDest11 = nullptr;
 		void* GPUCopy11 = nullptr;
+
+		// NEW: cache the opened shared source texture (avoid OpenSharedResource every frame)
+		void* CachedSrc11 = nullptr;          // ID3D11Texture2D*
+		void* CachedShareHandle = nullptr;    // HANDLE stored as void*
 
 		uint32 Width = 0;
 		uint32 Height = 0;
