@@ -29,6 +29,15 @@ THIRD_PARTY_INCLUDES_START
 #include "SpoutDX.h"
 #include "SpoutDX12.h"
 
+#ifndef TRUE
+#define TRUE 1
+#endif
+#ifndef FALSE
+#define FALSE 0
+#endif
+
+#include <d3d11_3.h>
+
 #ifdef max
 #undef max
 #endif
@@ -197,11 +206,20 @@ void USpoutReceiverComponent::StopReceiving()
 	bReceiving = false;
 	
 	// Release resources and close Spout devices.
-	if (Incoming.WrappedDest11)
+	for (int i = 0; i < 2; ++i)
 	{
-		reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11)->Release();
-		Incoming.WrappedDest11 = nullptr;
+		if (Incoming.WrappedDest11[i])
+		{
+			reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11[i])->Release();
+			Incoming.WrappedDest11[i] = nullptr;
+		}
+		CachedRTRes[i] = nullptr;
+		CachedRTObject[i] = nullptr;
 	}
+
+	InternalWriteIndex = 0;
+	InternalReadyIndex = -1;
+	bSeededOutput = false;
 
 	if (Incoming.GPUCopy11)
 	{
@@ -223,6 +241,55 @@ void USpoutReceiverComponent::StopReceiving()
 	}
 
 	bConnected = false;
+}
+
+bool USpoutReceiverComponent::EnsureUserOutputRT(uint32 W, uint32 H)
+{
+	if (!OutputRenderTarget) return false;
+
+	// Match your existing behavior: only resize when size changes
+	if ((uint32)OutputRenderTarget->SizeX == W && (uint32)OutputRenderTarget->SizeY == H)
+		return true;
+
+	const EPixelFormat NeededPF = MapDxgiToUE((DXGI_FORMAT)Incoming.Format);
+	const bool bUseLinearGamma = !IsDXGISRGB((DXGI_FORMAT)Incoming.Format);
+
+	OutputRenderTarget->InitCustomFormat(W, H, NeededPF, bUseLinearGamma);
+	OutputRenderTarget->UpdateResourceImmediate(true);
+
+	// Heavy but only on resize; keeps correctness
+	FlushRenderingCommands();
+	return true;
+}
+
+bool USpoutReceiverComponent::EnsureInternalRTs(uint32 W, uint32 H)
+{
+	if (!bUseDoubleBuffer)
+		return true;
+
+	if (!InternalRT_A)
+		InternalRT_A = NewObject<UTextureRenderTarget2D>(this);
+
+	if (!InternalRT_B)
+		InternalRT_B = NewObject<UTextureRenderTarget2D>(this);
+
+	// Initialize/resize to match incoming
+	const EPixelFormat NeededPF = MapDxgiToUE((DXGI_FORMAT)Incoming.Format);
+	const bool bUseLinearGamma = !IsDXGISRGB((DXGI_FORMAT)Incoming.Format);
+
+	auto EnsureOne = [&](UTextureRenderTarget2D* RT)
+		{
+			if (!RT) return false;
+			if ((uint32)RT->SizeX != W || (uint32)RT->SizeY != H)
+			{
+				RT->InitCustomFormat(W, H, NeededPF, bUseLinearGamma);
+				RT->UpdateResourceImmediate(true);
+				FlushRenderingCommands();
+			}
+			return true;
+		};
+
+	return EnsureOne(InternalRT_A) && EnsureOne(InternalRT_B);
 }
 
 // Return available Spout senders.
@@ -258,14 +325,20 @@ bool USpoutReceiverComponent::InitSpoutDevices()
 // Release resources and delete Spout objects.
 void USpoutReceiverComponent::ReleaseSpoutDevices()
 {
-	if (Incoming.WrappedDest11)
+	for (int i = 0; i < 2; ++i)
 	{
-		reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11)->Release();
+		if (Incoming.WrappedDest11[i])
+		{
+			reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11[i])->Release();
+			Incoming.WrappedDest11[i] = nullptr;
+		}
+		CachedRTRes[i] = nullptr;
+		CachedRTObject[i] = nullptr;
 	}
-	if (Incoming.GPUCopy11)
-	{
-		reinterpret_cast<ID3D11Resource*>(Incoming.GPUCopy11)->Release();
-	}
+
+	InternalWriteIndex = 0;
+	InternalReadyIndex = -1;
+	bSeededOutput = false;
 
 	if (Incoming.CachedSrc11)
 	{
@@ -273,8 +346,12 @@ void USpoutReceiverComponent::ReleaseSpoutDevices()
 		Incoming.CachedSrc11 = nullptr;
 	}
 	Incoming.CachedShareHandle = nullptr;
-	CachedRTRes = nullptr;
-	CachedRTObject = nullptr;
+
+	if (Incoming.GPUCopy11)
+	{
+		reinterpret_cast<ID3D11Resource*>(Incoming.GPUCopy11)->Release();
+		Incoming.GPUCopy11 = nullptr;
+	}
 
 	Incoming = FIncoming{};
 
@@ -428,19 +505,33 @@ bool USpoutReceiverComponent::ReceiveOnce()
 		reinterpret_cast<ID3D11Resource*>(Src11)
 	);
 
-	// Ensure UE render target exists and is wrapped for DX11.
-	bool bDestOK = false;
-	if (OutputRenderTarget) {
-		bDestOK = EnsureGpuRenderTarget(Incoming.Width, Incoming.Height);
-	} else 
+	// Always keep user output RT valid (stable object)
+	if (!OutputRenderTarget || !EnsureUserOutputRT(Incoming.Width, Incoming.Height))
 	{
-		UE_LOG(LogSpoutRX, Warning, TEXT("No selected Render Target!"));
+		UE_LOG(LogSpoutRX, Warning, TEXT("User OutputRenderTarget missing or failed to init."));
 		return false;
 	}
-		
-	// Check wrapped destination resource.
+
+	// Choose internal write RT when enabled; otherwise keep old behavior (write directly to user RT)
+	UTextureRenderTarget2D* WriteRT = OutputRenderTarget;
+	int32 WriteIdx = 0;
+
+	if (bUseDoubleBuffer)
+	{
+		if (!EnsureInternalRTs(Incoming.Width, Incoming.Height))
+		{
+			UE_LOG(LogSpoutRX, Error, TEXT("Failed to init internal RTs."));
+			return false;
+		}
+
+		WriteIdx = (InternalWriteIndex == 0) ? 0 : 1;
+		WriteRT = (WriteIdx == 0) ? InternalRT_A : InternalRT_B;
+	}
+
+	// Ensure destination is wrapped (wraps internal RT or user RT depending on mode)
+	const bool bDestOK = EnsureGpuRenderTarget(Incoming.Width, Incoming.Height, WriteIdx, WriteRT);
 	if (!bDestOK) { UE_LOG(LogSpoutRX, Error, TEXT("ReceiveOnce: ensure dest failed")); return false; }
-	if (!Incoming.WrappedDest11) { UE_LOG(LogSpoutRX, Error, TEXT("ReceiveOnce: WrappedDest11 null")); return false; }
+	if (!Incoming.WrappedDest11[WriteIdx]) { UE_LOG(LogSpoutRX, Error, TEXT("ReceiveOnce: WrappedDest11 null")); return false; }
 
 	// Copy local DX11 texture to wrapped UE render target.
 	ID3D11On12Device* D3D11On12 = USpoutReceiverComponent::GetD3D11On12(SpoutDX12);
@@ -450,21 +541,73 @@ bool USpoutReceiverComponent::ReceiveOnce()
 		return false;
 	}
 
-	// Acquire wrapped resource, copy, then release it.
-	ID3D11Resource* ToAcquire[1] = { reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11) };
+	ID3D11Resource* ToAcquire[1] = { reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11[WriteIdx]) };
 	D3D11On12->AcquireWrappedResources(ToAcquire, 1);
 
 	Ctx11->CopyResource(
-		reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11),
+		reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11[WriteIdx]),
 		reinterpret_cast<ID3D11Resource*>(Incoming.GPUCopy11)
 	);
 
 	D3D11On12->ReleaseWrappedResources(ToAcquire, 1);
-	// Flush to finish copy now.
-	Ctx11->Flush();
+
+	// No per-frame flush in stable-user-RT internal double buffer mode.
+	// Keep flush in legacy single-buffer mode (current working behavior).
+	// Submit D3D11on12 work every frame.
+// Without a submit/flush, updates can appear ~1 FPS because commands stay buffered. :contentReference[oaicite:1]{index=1}
+	if (ID3D11DeviceContext3* Ctx3 = nullptr;
+		SUCCEEDED(Ctx11->QueryInterface(__uuidof(ID3D11DeviceContext3), (void**)&Ctx3)) && Ctx3)
+	{
+		// Flush1 is asynchronous and can be less disruptive than Flush in some drivers. :contentReference[oaicite:2]{index=2}
+		Ctx3->Flush1(D3D11_CONTEXT_TYPE_ALL, nullptr);
+		Ctx3->Release();
+	}
+	else
+	{
+		Ctx11->Flush();
+	}
 	UE_LOG(LogSpoutRX, Verbose, TEXT("Copy submitted + Flush"));
 	// Mark as connected.
 	bConnected = true;
+	if (bUseDoubleBuffer)
+	{
+		// Publish the previously completed internal buffer into the user RT (stable object).
+		// First frame: seed output once using a flush to avoid initial blank.
+		if (InternalReadyIndex < 0)
+		{
+			// Seed: force completion once, then publish the just-written buffer.
+			Ctx11->Flush();
+			InternalReadyIndex = WriteIdx;
+			bSeededOutput = true;
+		}
+		else
+		{
+			// Normal: display previous completed buffer (avoids black frames without per-frame flush)
+			UTextureRenderTarget2D* ReadyRT = (InternalReadyIndex == 0) ? InternalRT_A : InternalRT_B;
+
+			FTextureRenderTargetResource* SrcRes = ReadyRT->GameThread_GetRenderTargetResource();
+			FTextureRenderTargetResource* DstRes = OutputRenderTarget->GameThread_GetRenderTargetResource();
+
+			if (SrcRes && DstRes)
+			{
+				ENQUEUE_RENDER_COMMAND(SpoutCopyInternalToUserRT)(
+					[SrcRes, DstRes](FRHICommandListImmediate& RHICmdList)
+					{
+						FRHITexture* SrcTex = SrcRes->GetRenderTargetTexture();
+						FRHITexture* DstTex = DstRes->GetRenderTargetTexture();
+						if (SrcTex && DstTex)
+						{
+							FRHICopyTextureInfo Info;
+							RHICmdList.CopyTexture(SrcTex, DstTex, Info);
+						}
+					});
+			}
+
+			InternalReadyIndex = WriteIdx;
+		}
+
+		InternalWriteIndex = 1 - WriteIdx;
+	}
 	UE_LOG(LogSpoutRX, Verbose, TEXT("ReceiveOnce!"));
 
 	// If TargetFPS <= 0, receive one frame then stop.
@@ -475,105 +618,81 @@ bool USpoutReceiverComponent::ReceiveOnce()
 }
 
 // Ensure UE render target exists and is wrapped for DX11.
-bool USpoutReceiverComponent::EnsureGpuRenderTarget(uint32 W, uint32 H)
+bool USpoutReceiverComponent::EnsureGpuRenderTarget(uint32 W, uint32 H, int32 Index, UTextureRenderTarget2D* TargetRT)
 {
-	if (!OutputRenderTarget) return false;
+	if (!TargetRT) return false;
+	Index = (Index == 0) ? 0 : 1;
 
-	// Detect RT object change (user swapped OutputRenderTarget)
-	if (CachedRTObject != OutputRenderTarget)
+	// Invalidate cache if TargetRT object changed for this slot
+	if (CachedRTObject[Index] != TargetRT)
 	{
-		CachedRTObject = OutputRenderTarget;
-		CachedRTRes = nullptr;
+		CachedRTObject[Index] = TargetRT;
+		CachedRTRes[Index] = nullptr;
 
-		if (Incoming.WrappedDest11)
+		if (Incoming.WrappedDest11[Index])
 		{
-			reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11)->Release();
-			Incoming.WrappedDest11 = nullptr;
+			reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11[Index])->Release();
+			Incoming.WrappedDest11[Index] = nullptr;
 		}
 	}
 
-	// Keep your existing size-only reinit logic (to avoid behavior change)
-	bool bReinit = false;
-	if ((uint32)OutputRenderTarget->SizeX != W || (uint32)OutputRenderTarget->SizeY != H)
-	{
-		bReinit = true;
-	}
-
+	// Resize TargetRT if needed (size only)
+	bool bReinit = ((uint32)TargetRT->SizeX != W) || ((uint32)TargetRT->SizeY != H);
 	if (bReinit)
 	{
-		const EPixelFormat NeededPF = MapDxgiToUE(static_cast<DXGI_FORMAT>(Incoming.Format));
-		const bool bUseLinearGamma = !IsDXGISRGB(static_cast<DXGI_FORMAT>(Incoming.Format));
+		const EPixelFormat NeededPF = MapDxgiToUE((DXGI_FORMAT)Incoming.Format);
+		const bool bUseLinearGamma = !IsDXGISRGB((DXGI_FORMAT)Incoming.Format);
 
-		OutputRenderTarget->InitCustomFormat(W, H, NeededPF, bUseLinearGamma);
-		OutputRenderTarget->UpdateResourceImmediate(true);
-
-		// This is heavy but happens only on resize; keep it for correctness
+		TargetRT->InitCustomFormat(W, H, NeededPF, bUseLinearGamma);
+		TargetRT->UpdateResourceImmediate(true);
 		FlushRenderingCommands();
 
-		// After recreation, the old wrapper is invalid
-		if (Incoming.WrappedDest11)
+		if (Incoming.WrappedDest11[Index])
 		{
-			reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11)->Release();
-			Incoming.WrappedDest11 = nullptr;
+			reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11[Index])->Release();
+			Incoming.WrappedDest11[Index] = nullptr;
 		}
-
-		CachedRTRes = nullptr;
+		CachedRTRes[Index] = nullptr;
 	}
 
-	// Get render target resource on game thread.
-	FTextureRenderTargetResource* RTRes = OutputRenderTarget->GameThread_GetRenderTargetResource();
+	FTextureRenderTargetResource* RTRes = TargetRT->GameThread_GetRenderTargetResource();
 	if (!RTRes)
 	{
 		UE_LOG(LogSpoutRX, Display, TEXT("EnsureGpuRT: no RT resource (game thread)"));
 		return false;
 	}
 
-	// If we already wrapped this exact RT resource, do nothing (no fence, no stall)
-	if (Incoming.WrappedDest11 && CachedRTRes == RTRes)
-	{
+	// Already wrapped for this exact render resource
+	if (Incoming.WrappedDest11[Index] && CachedRTRes[Index] == RTRes)
 		return true;
-	}
 
-	// RT resource changed (or first time): re-wrap ONCE
-	if (Incoming.WrappedDest11)
+	// Re-wrap
+	if (Incoming.WrappedDest11[Index])
 	{
-		reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11)->Release();
-		Incoming.WrappedDest11 = nullptr;
+		reinterpret_cast<ID3D11Resource*>(Incoming.WrappedDest11[Index])->Release();
+		Incoming.WrappedDest11[Index] = nullptr;
 	}
 
 	FRenderCommandFence Fence;
 	bool bWrapOk = false;
 
 	ENQUEUE_RENDER_COMMAND(WrapSpoutRT)(
-		[this, RTRes, &bWrapOk](FRHICommandListImmediate& RHICmdList)
+		[this, RTRes, Index, &bWrapOk](FRHICommandListImmediate& RHICmdList)
 		{
 			FRHITexture* RHI = RTRes->GetRenderTargetTexture();
-			if (!RHI)
-			{
-				UE_LOG(LogSpoutRX, Display, TEXT("EnsureGpuRT: no RHI texture (render thread)"));
-				bWrapOk = false;
-				return;
-			}
+			if (!RHI) { bWrapOk = false; return; }
 
 			ID3D12Resource* DestDX12 = (ID3D12Resource*)RHI->GetNativeResource();
-			if (!DestDX12)
-			{
-				UE_LOG(LogSpoutRX, Display, TEXT("EnsureGpuRT: no native D3D12 (render thread)"));
-				bWrapOk = false;
-				return;
-			}
+			if (!DestDX12) { bWrapOk = false; return; }
 
 			ID3D11Resource* Wrapped = nullptr;
-
-			// Keep your current state argument to avoid behavior change
 			if (!SpoutDX12->WrapDX12Resource(DestDX12, &Wrapped, D3D12_RESOURCE_STATE_COPY_DEST))
 			{
-				UE_LOG(LogSpoutRX, Display, TEXT("EnsureGpuRT: WrapDX12Resource failed"));
 				bWrapOk = false;
 				return;
 			}
 
-			Incoming.WrappedDest11 = Wrapped;
+			Incoming.WrappedDest11[Index] = Wrapped;
 			bWrapOk = true;
 		});
 
@@ -581,12 +700,7 @@ bool USpoutReceiverComponent::EnsureGpuRenderTarget(uint32 W, uint32 H)
 	Fence.Wait(false);
 
 	if (bWrapOk)
-	{
-		CachedRTRes = RTRes;
-	}
-
-	UE_LOG(LogSpoutRX, Verbose, TEXT("EnsureGpuRenderTarget: %ux%u resized=%d wrap=%d"),
-		W, H, bReinit ? 1 : 0, bWrapOk ? 1 : 0);
+		CachedRTRes[Index] = RTRes;
 
 	return bWrapOk;
 }

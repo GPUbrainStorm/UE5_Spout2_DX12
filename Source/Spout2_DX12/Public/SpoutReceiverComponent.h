@@ -54,6 +54,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Spout")
 	bool IsConnected() const { return bConnected; }
 
+	// Keep OutputRenderTarget stable for users; use internal buffers for receiving.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout Receiver")
+	bool bUseDoubleBuffer = false;
+
+	// Internal render targets for receiving and copying (when using stable user RT option).
+	UPROPERTY(Transient)
+	TObjectPtr<UTextureRenderTarget2D> InternalRT_A;
+	UPROPERTY(Transient)
+	TObjectPtr<UTextureRenderTarget2D> InternalRT_B;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -64,18 +74,22 @@ private:
 	spoutDX* SpoutInfo = nullptr;
 	spoutDX12* SpoutDX12 = nullptr;
 	// NEW: cache which RT resource we wrapped (wrap only when RT resource changes/recreates)
-	FTextureRenderTargetResource* CachedRTRes = nullptr;
-	UTextureRenderTarget2D* CachedRTObject = nullptr;
+	// MUST be pointers (so you can assign nullptr / compare pointers)
+	FTextureRenderTargetResource* CachedRTRes[2] = { nullptr, nullptr };
+	UTextureRenderTarget2D* CachedRTObject[2] = { nullptr, nullptr };
+	int32 InternalWriteIndex = 0;     // 0 or 1
+	int32 InternalReadyIndex = -1;    // -1 until first frame is written
+	bool  bSeededOutput = false;      // true after first successful publish to user RT
 
 	// Incoming sender info + resources
 	struct FIncoming
 	{
-		void* WrappedDest11 = nullptr;
-		void* GPUCopy11 = nullptr;
+		void* WrappedDest11[2] = { nullptr, nullptr }; // ID3D11Resource*
+		void* GPUCopy11 = nullptr;                    // ID3D11Texture2D*
 
-		// NEW: cache the opened shared source texture (avoid OpenSharedResource every frame)
-		void* CachedSrc11 = nullptr;          // ID3D11Texture2D*
-		void* CachedShareHandle = nullptr;    // HANDLE stored as void*
+		// REQUIRED (your .cpp uses these)
+		void* CachedSrc11 = nullptr;                  // ID3D11Texture2D*
+		void* CachedShareHandle = nullptr;            // HANDLE stored as void*
 
 		uint32 Width = 0;
 		uint32 Height = 0;
@@ -96,7 +110,9 @@ private:
 
 	// Receive and copy to UE render target
 	bool ReceiveOnce();
-	bool EnsureGpuRenderTarget(uint32 W, uint32 H);
+	bool EnsureGpuRenderTarget(uint32 W, uint32 H, int32 Index, UTextureRenderTarget2D* TargetRT);
+	bool EnsureUserOutputRT(uint32 W, uint32 H);
+	bool EnsureInternalRTs(uint32 W, uint32 H);
 
 	// DX11 and DX12 RHI devices
 	static struct ID3D12Device* GetUE_D3D12Device();
