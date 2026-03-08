@@ -4,6 +4,7 @@
 #include "Components/ActorComponent.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "RHIResources.h"
+#include "RenderCommandFence.h"
 #include "SpoutSenderComponent.generated.h"
 
 struct ID3D11Resource;
@@ -39,6 +40,8 @@ public:
     UTextureRenderTarget2D* CurrentRenderTarget = nullptr;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
     int32 BroadcastFPS = 60;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
+    bool bUseDoubleBuffer = false;
 
     FTimerHandle BroadcastTimerHandle;
 
@@ -47,15 +50,23 @@ protected:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+    struct FSpoutStageSlot
+    {
+        FTextureRHIRef Texture;
+        ID3D11Resource* Wrapped11 = nullptr;
+        int32 Width = 0;
+        int32 Height = 0;
+        EPixelFormat Format = PF_Unknown;
+        FRenderCommandFence Fence;
+    };
+
     spoutDX12* SpoutBridge = nullptr;
 
-    ID3D11Resource* StagingWrapped11 = nullptr;
-    FTextureRHIRef StagingRHI;
-    int32 StagingW = 0;
-    int32 StagingH = 0;
-    EPixelFormat StagingPF = PF_Unknown;
+    FSpoutStageSlot StageSlots[2];
+    int32 NextStageSlot = 0;
 
     bool bIsBroadcasting = false;
 
-    void QueueSendFrame_RenderThread(FTextureRHIRef SrcRHI, int32 W, int32 H, EPixelFormat PF);
+    void ResetStageSlots();
+    void QueueSendFrame_RenderThread(FTextureRHIRef SrcRHI, int32 W, int32 H, EPixelFormat PF, int32 SlotIndex);
 };

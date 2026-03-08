@@ -93,32 +93,34 @@ void USpoutSenderComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
     Super::EndPlay(EndPlayReason);
 }
 
-void USpoutSenderComponent::QueueSendFrame_RenderThread(FTextureRHIRef SrcRHI, int32 W, int32 H, EPixelFormat PF)
+void USpoutSenderComponent::QueueSendFrame_RenderThread(FTextureRHIRef SrcRHI, int32 W, int32 H, EPixelFormat PF, int32 SlotIndex)
 {
 #if PLATFORM_WINDOWS
     ENQUEUE_RENDER_COMMAND(SpoutSendFrame)(
-        [this, SrcRHI, W, H, PF](FRHICommandListImmediate& RHICmdList)
+        [this, SrcRHI, W, H, PF, SlotIndex](FRHICommandListImmediate& RHICmdList)
         {
-            if (!SpoutBridge || !SrcRHI.IsValid())
+            if (!SpoutBridge || !SrcRHI.IsValid() || SlotIndex < 0 || SlotIndex > 1)
             {
                 return;
             }
 
+            FSpoutStageSlot& Slot = StageSlots[SlotIndex];
+
             const bool bNeedCreate =
-                !StagingRHI.IsValid() ||
-                W != StagingW ||
-                H != StagingH ||
-                PF != StagingPF;
+                !Slot.Texture.IsValid() ||
+                Slot.Width != W ||
+                Slot.Height != H ||
+                Slot.Format != PF;
 
             if (bNeedCreate)
             {
-                if (StagingWrapped11)
+                if (Slot.Wrapped11)
                 {
-                    StagingWrapped11->Release();
-                    StagingWrapped11 = nullptr;
+                    Slot.Wrapped11->Release();
+                    Slot.Wrapped11 = nullptr;
                 }
 
-                StagingRHI.SafeRelease();
+                Slot.Texture.SafeRelease();
 
                 FRHITextureCreateDesc Desc =
                     FRHITextureCreateDesc::Create2D(TEXT("SpoutStagingShared"), W, H, PF)
@@ -126,45 +128,69 @@ void USpoutSenderComponent::QueueSendFrame_RenderThread(FTextureRHIRef SrcRHI, i
                         ETextureCreateFlags::RenderTargetable |
                         ETextureCreateFlags::Shared);
 
-                StagingRHI = RHICreateTexture(Desc);
-                StagingW = W;
-                StagingH = H;
-                StagingPF = PF;
+                Slot.Texture = RHICreateTexture(Desc);
+                Slot.Width = W;
+                Slot.Height = H;
+                Slot.Format = PF;
             }
 
-            if (!StagingRHI.IsValid())
+            if (!Slot.Texture.IsValid())
             {
                 return;
             }
 
             FRHITexture* Src = SrcRHI.GetReference();
-            FRHITexture* Dst = StagingRHI.GetReference();
+            FRHITexture* Dst = Slot.Texture.GetReference();
+
+            const ERHIAccess DstBefore = bNeedCreate ? ERHIAccess::Unknown : ERHIAccess::SRVMask;
 
             RHICmdList.Transition(FRHITransitionInfo(Src, ERHIAccess::RTV, ERHIAccess::CopySrc));
-            RHICmdList.Transition(FRHITransitionInfo(Dst, ERHIAccess::Unknown, ERHIAccess::CopyDest));
+            RHICmdList.Transition(FRHITransitionInfo(Dst, DstBefore, ERHIAccess::CopyDest));
 
             FRHICopyTextureInfo CopyInfo;
             RHICmdList.CopyTexture(Src, Dst, CopyInfo);
 
             RHICmdList.Transition(FRHITransitionInfo(Dst, ERHIAccess::CopyDest, ERHIAccess::SRVMask));
 
-            if (!StagingWrapped11)
+            if (!Slot.Wrapped11)
             {
-                ID3D12Resource* NativeDX12 = static_cast<ID3D12Resource*>(StagingRHI->GetNativeResource());
+                ID3D12Resource* NativeDX12 = static_cast<ID3D12Resource*>(Slot.Texture->GetNativeResource());
                 if (!NativeDX12)
                 {
                     return;
                 }
 
-                if (!SpoutBridge->WrapDX12Resource(NativeDX12, &StagingWrapped11, D3D12_RESOURCE_STATE_GENERIC_READ) ||
-                    !StagingWrapped11)
+                if (!SpoutBridge->WrapDX12Resource(NativeDX12, &Slot.Wrapped11, D3D12_RESOURCE_STATE_GENERIC_READ) ||
+                    !Slot.Wrapped11)
                 {
                     return;
                 }
             }
 
-            SpoutBridge->SendDX11Resource(StagingWrapped11);
+            SpoutBridge->SendDX11Resource(Slot.Wrapped11);
         });
+#endif
+}
+
+void USpoutSenderComponent::ResetStageSlots()
+{
+#if PLATFORM_WINDOWS
+    for (int32 i = 0; i < 2; ++i)
+    {
+        StageSlots[i].Texture.SafeRelease();
+
+        if (StageSlots[i].Wrapped11)
+        {
+            StageSlots[i].Wrapped11->Release();
+            StageSlots[i].Wrapped11 = nullptr;
+        }
+
+        StageSlots[i].Width = 0;
+        StageSlots[i].Height = 0;
+        StageSlots[i].Format = PF_Unknown;
+    }
+
+    NextStageSlot = 0;
 #endif
 }
 
@@ -192,7 +218,36 @@ void USpoutSenderComponent::UpdateTexture()
     const int32 H = CurrentRenderTarget->SizeY;
     const EPixelFormat PF = CurrentRenderTarget->GetFormat();
 
-    QueueSendFrame_RenderThread(SrcRHI, W, H, PF);
+    const int32 SlotCount = bUseDoubleBuffer ? 2 : 1;
+
+    int32 SlotIndex = NextStageSlot;
+
+    if (!StageSlots[SlotIndex].Fence.IsFenceComplete())
+    {
+        if (SlotCount == 2)
+        {
+            const int32 OtherSlot = 1 - SlotIndex;
+
+            if (StageSlots[OtherSlot].Fence.IsFenceComplete())
+            {
+                SlotIndex = OtherSlot;
+            }
+            else
+            {
+                return;
+            }
+        }
+        else
+        {
+            return;
+        }
+    }
+
+    QueueSendFrame_RenderThread(SrcRHI, W, H, PF, SlotIndex);
+
+    StageSlots[SlotIndex].Fence.BeginFence();
+
+    NextStageSlot = (SlotIndex + 1) % SlotCount;
 #endif
 }
 
@@ -207,15 +262,16 @@ void USpoutSenderComponent::StartBroadcast(
         return;
     }
 
-    if (UWorld* World = GetWorld())
+    if (bIsBroadcasting)
     {
-        World->GetTimerManager().ClearTimer(BroadcastTimerHandle);
+        StopBroadcast();
     }
 
     CurrentRenderTarget = RenderTarget;
     CurrentSenderName = SenderName;
     BroadcastFPS = FMath::Clamp(FPS, 0, 240);
     bIsBroadcasting = true;
+    NextStageSlot = 0;
 
     SpoutBridge->SetSenderName(TCHAR_TO_ANSI(*CurrentSenderName));
 
@@ -258,17 +314,7 @@ void USpoutSenderComponent::StopBroadcast()
         SpoutBridge->SetSenderName("");
     }
 
-    StagingRHI.SafeRelease();
-
-    if (StagingWrapped11)
-    {
-        StagingWrapped11->Release();
-        StagingWrapped11 = nullptr;
-    }
-
-    StagingW = 0;
-    StagingH = 0;
-    StagingPF = PF_Unknown;
+    ResetStageSlots();
 
     CurrentRenderTarget = nullptr;
     CurrentSenderName.Empty();
@@ -288,18 +334,7 @@ void USpoutSenderComponent::ChangeRenderTarget(UTextureRenderTarget2D* NewRender
     FlushRenderingCommands();
 
     CurrentRenderTarget = NewRenderTarget;
-
-    StagingRHI.SafeRelease();
-
-    if (StagingWrapped11)
-    {
-        StagingWrapped11->Release();
-        StagingWrapped11 = nullptr;
-    }
-
-    StagingW = 0;
-    StagingH = 0;
-    StagingPF = PF_Unknown;
+    ResetStageSlots();
 
     if (bIsBroadcasting && CurrentRenderTarget)
     {
