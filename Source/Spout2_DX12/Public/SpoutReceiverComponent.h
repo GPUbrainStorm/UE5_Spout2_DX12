@@ -5,6 +5,7 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/Texture2D.h"
 #include "RHIResources.h"
+#include "HAL/PlatformTime.h"
 #include "SpoutReceiverComponent.generated.h"
 
 // Forward declare Spout classes
@@ -64,6 +65,22 @@ public:
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTarget2D> InternalRT_B;
 
+	// Debug / runtime stats
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spout Receiver|Stats")
+	float CopiesPerSecond = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spout Receiver|Stats")
+	float Flush1PerSecond = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spout Receiver|Stats")
+	float FlushPerSecond = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spout Receiver|Stats")
+	int32 ReconnectCount = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spout Receiver|Stats")
+	int32 MissedFrames = 0;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -73,23 +90,28 @@ private:
 	// Spout objects
 	spoutDX* SpoutInfo = nullptr;
 	spoutDX12* SpoutDX12 = nullptr;
-	// NEW: cache which RT resource we wrapped (wrap only when RT resource changes/recreates)
-	// MUST be pointers (so you can assign nullptr / compare pointers)
 	FTextureRenderTargetResource* CachedRTRes[2] = { nullptr, nullptr };
 	UTextureRenderTarget2D* CachedRTObject[2] = { nullptr, nullptr };
 	int32 InternalWriteIndex = 0;     // 0 or 1
 	int32 InternalReadyIndex = -1;    // -1 until first frame is written
 	bool  bSeededOutput = false;      // true after first successful publish to user RT
+	struct ID3D11DeviceContext3* CachedCtx11_3 = nullptr;
+
+	// stats internals
+	uint64 StatCopyCount = 0;
+	uint64 StatFlush1Count = 0;
+	uint64 StatFlushCount = 0;
+	uint64 StatMissedFramesAccum = 0;
+	double StatWindowStartSeconds = 0.0;
 
 	// Incoming sender info + resources
 	struct FIncoming
 	{
-		void* WrappedDest11[2] = { nullptr, nullptr }; // ID3D11Resource*
-		void* GPUCopy11 = nullptr;                    // ID3D11Texture2D*
+		void* WrappedDest11[2] = { nullptr, nullptr }; 
+		void* GPUCopy11 = nullptr;                    
 
-		// REQUIRED (your .cpp uses these)
-		void* CachedSrc11 = nullptr;                  // ID3D11Texture2D*
-		void* CachedShareHandle = nullptr;            // HANDLE stored as void*
+		void* CachedSrc11 = nullptr;                 
+		void* CachedShareHandle = nullptr;            
 
 		uint32 Width = 0;
 		uint32 Height = 0;
@@ -113,6 +135,9 @@ private:
 	bool EnsureGpuRenderTarget(uint32 W, uint32 H, int32 Index, UTextureRenderTarget2D* TargetRT);
 	bool EnsureUserOutputRT(uint32 W, uint32 H);
 	bool EnsureInternalRTs(uint32 W, uint32 H);
+	void ResetStats();
+	void UpdateStatsWindow();
+	bool CacheDX11Context3();
 
 	// DX11 and DX12 RHI devices
 	static struct ID3D12Device* GetUE_D3D12Device();

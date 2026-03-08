@@ -92,6 +92,7 @@ USpoutReceiverComponent::USpoutReceiverComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = true;
+	ResetStats();
 }
 
 USpoutReceiverComponent::~USpoutReceiverComponent()
@@ -114,11 +115,63 @@ void USpoutReceiverComponent::BeginPlay()
 	}
 
 	InitSpoutDevices();
+	ResetStats();
 
 	if (bAutoStart)
 	{
 		StartReceiving();
 	}
+}
+
+void USpoutReceiverComponent::ResetStats()
+{
+	CopiesPerSecond = 0.0f;
+	FlushPerSecond = 0.0f;
+	Flush1PerSecond = 0.0f;
+	ReconnectCount = 0;
+	MissedFrames = 0;
+
+	StatCopyCount = 0;
+	StatFlushCount = 0;
+	StatFlush1Count = 0;
+	StatMissedFramesAccum = 0;
+	StatWindowStartSeconds = FPlatformTime::Seconds();
+}
+
+void USpoutReceiverComponent::UpdateStatsWindow()
+{
+	const double Now = FPlatformTime::Seconds();
+	const double Elapsed = Now - StatWindowStartSeconds;
+
+	if (Elapsed >= 1.0)
+	{
+		CopiesPerSecond = static_cast<float>(StatCopyCount / Elapsed);
+		FlushPerSecond = static_cast<float>(StatFlushCount / Elapsed);
+		Flush1PerSecond = static_cast<float>(StatFlush1Count / Elapsed);
+		MissedFrames = static_cast<int32>(StatMissedFramesAccum);
+
+		StatCopyCount = 0;
+		StatFlushCount = 0;
+		StatFlush1Count = 0;
+		StatMissedFramesAccum = 0;
+		StatWindowStartSeconds = Now;
+	}
+}
+
+bool USpoutReceiverComponent::CacheDX11Context3()
+{
+	if (CachedCtx11_3)
+		return true;
+
+	if (!SpoutDX12)
+		return false;
+
+	ID3D11DeviceContext* Ctx11 = SpoutDX12->GetD3D11context();
+	if (!Ctx11)
+		return false;
+
+	HRESULT hr = Ctx11->QueryInterface(__uuidof(ID3D11DeviceContext3), reinterpret_cast<void**>(&CachedCtx11_3));
+	return SUCCEEDED(hr) && CachedCtx11_3 != nullptr;
 }
 
 // Cleanup on end play.
@@ -152,6 +205,7 @@ void USpoutReceiverComponent::TickComponent(float DeltaTime, enum ELevelTick Tic
 	TickAccumulator -= TargetInterval;
 
 	ReceiveOnce();
+	UpdateStatsWindow();
 
 }
 
@@ -169,6 +223,8 @@ void USpoutReceiverComponent::StartReceiving()
 		UE_LOG(LogSpoutRX, Error, TEXT("SpoutDX12->OpenDirectX12 failed."));
 		return;
 	}
+
+	CacheDX11Context3();
 
 	// Use selected sender name, or active sender if empty.
 	if (!SpoutSenderName.IsEmpty())
@@ -192,6 +248,11 @@ void USpoutReceiverComponent::StartReceiving()
 	}
 	else {
 		TargetInterval = 0.f;
+	}
+
+	if (!bReceiving)
+	{
+		++ReconnectCount;
 	}
 
 	// Mark receiver as running.
@@ -238,6 +299,12 @@ void USpoutReceiverComponent::StopReceiving()
 	{
 		SpoutDX12->ReleaseReceiver();
 		SpoutDX12->CloseDirectX12();
+	}
+
+	if (CachedCtx11_3)
+	{
+		CachedCtx11_3->Release();
+		CachedCtx11_3 = nullptr;
 	}
 
 	bConnected = false;
@@ -355,6 +422,12 @@ void USpoutReceiverComponent::ReleaseSpoutDevices()
 
 	Incoming = FIncoming{};
 
+	if (CachedCtx11_3)
+	{
+		CachedCtx11_3->Release();
+		CachedCtx11_3 = nullptr;
+	}
+
 	if (SpoutDX12)
 	{
 		SpoutDX12->ReleaseReceiver();
@@ -381,6 +454,8 @@ bool USpoutReceiverComponent::ReceiveOnce()
 	}
 
 	UE_LOG(LogSpoutRX, Verbose, TEXT("ReceiveOnce: begin"));
+	bool bDidCopyThisFrame = false;
+	bool bDidFlushThisFrame = false;
 
 	// Read sender info from Spout.
 	unsigned int SW = 0, SH = 0; HANDLE Share = nullptr; DWORD Fmt = 0;
@@ -390,6 +465,7 @@ bool USpoutReceiverComponent::ReceiveOnce()
 		{
 			UE_LOG(LogSpoutRX, Error, TEXT("ReceiveOnce: no valid sender/share."));
 			bConnected = false;
+			++StatMissedFramesAccum;
 			return false;
 		}
 		Incoming.Width = SW;
@@ -406,6 +482,7 @@ bool USpoutReceiverComponent::ReceiveOnce()
 	if (!Dev11 || !Ctx11)
 	{
 		UE_LOG(LogSpoutRX, Warning, TEXT("ReceiveOnce: DX11 device/context unavailable."));
+		++StatMissedFramesAccum;
 		return false;
 	}
 	ID3D11Texture2D* Src11 = nullptr;
@@ -504,6 +581,8 @@ bool USpoutReceiverComponent::ReceiveOnce()
 		reinterpret_cast<ID3D11Resource*>(Incoming.GPUCopy11),
 		reinterpret_cast<ID3D11Resource*>(Src11)
 	);
+	bDidCopyThisFrame = true;
+	++StatCopyCount;
 
 	// Always keep user output RT valid (stable object)
 	if (!OutputRenderTarget || !EnsureUserOutputRT(Incoming.Width, Incoming.Height))
@@ -551,22 +630,23 @@ bool USpoutReceiverComponent::ReceiveOnce()
 
 	D3D11On12->ReleaseWrappedResources(ToAcquire, 1);
 
-	// No per-frame flush in stable-user-RT internal double buffer mode.
 	// Keep flush in legacy single-buffer mode (current working behavior).
 	// Submit D3D11on12 work every frame.
-// Without a submit/flush, updates can appear ~1 FPS because commands stay buffered. :contentReference[oaicite:1]{index=1}
-	if (ID3D11DeviceContext3* Ctx3 = nullptr;
-		SUCCEEDED(Ctx11->QueryInterface(__uuidof(ID3D11DeviceContext3), (void**)&Ctx3)) && Ctx3)
+	if (bDidCopyThisFrame)
 	{
-		// Flush1 is asynchronous and can be less disruptive than Flush in some drivers. :contentReference[oaicite:2]{index=2}
-		Ctx3->Flush1(D3D11_CONTEXT_TYPE_ALL, nullptr);
-		Ctx3->Release();
+		if (CachedCtx11_3 || CacheDX11Context3())
+		{
+			CachedCtx11_3->Flush1(D3D11_CONTEXT_TYPE_ALL, nullptr);
+			++StatFlush1Count;
+		}
+		else
+		{
+			Ctx11->Flush();
+			bDidFlushThisFrame = true;
+			++StatFlushCount;
+		}
+		UE_LOG(LogSpoutRX, Verbose, TEXT("Copy submitted + Flush"));
 	}
-	else
-	{
-		Ctx11->Flush();
-	}
-	UE_LOG(LogSpoutRX, Verbose, TEXT("Copy submitted + Flush"));
 	// Mark as connected.
 	bConnected = true;
 	if (bUseDoubleBuffer)
