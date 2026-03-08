@@ -1,7 +1,7 @@
 #include "SpoutSenderComponent.h"
 
 #include "Engine/World.h"
-#include "TimerManager.h"
+#include "GameFramework/Actor.h"
 #include "Engine/TextureRenderTarget.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "RenderingThread.h"
@@ -43,15 +43,53 @@ THIRD_PARTY_INCLUDES_END
 
 USpoutSenderComponent::USpoutSenderComponent()
 {
-    PrimaryComponentTick.bCanEverTick = false; // Timer drives updates.
+    PrimaryComponentTick.bCanEverTick = true;
+    PrimaryComponentTick.bStartWithTickEnabled = false;
+    PrimaryComponentTick.TickInterval = 0.0f;
+}
+
+void USpoutSenderComponent::ClearTickPrerequisite()
+{
+#if PLATFORM_WINDOWS
+    if (AppliedTickAfterActor.IsValid())
+    {
+        RemoveTickPrerequisiteActor(AppliedTickAfterActor.Get());
+        AppliedTickAfterActor.Reset();
+    }
+#endif
+}
+
+void USpoutSenderComponent::ApplyTickPrerequisite()
+{
+#if PLATFORM_WINDOWS
+    ClearTickPrerequisite();
+
+    if (TickAfterActor && TickAfterActor != GetOwner())
+    {
+        AddTickPrerequisiteActor(TickAfterActor);
+        AppliedTickAfterActor = TickAfterActor;
+    }
+#endif
+}
+
+void USpoutSenderComponent::SetTickAfterActor(AActor* NewTickAfterActor)
+{
+#if PLATFORM_WINDOWS
+    if (TickAfterActor == NewTickAfterActor)
+    {
+        return;
+    }
+
+    TickAfterActor = NewTickAfterActor;
+    ApplyTickPrerequisite();
+#endif
 }
 
 void USpoutSenderComponent::BeginPlay()
 {
     Super::BeginPlay();
 
-#if PLATFORM_WINDOWS  
-    // Run only on D3D12.
+#if PLATFORM_WINDOWS
     if (!(GDynamicRHI && FString(GDynamicRHI->GetName()) == TEXT("D3D12")))
     {
         UE_LOG(LogTemp, Warning,
@@ -67,6 +105,8 @@ void USpoutSenderComponent::BeginPlay()
 
     SpoutBridge->OpenDirectX12();
 
+    ApplyTickPrerequisite();
+
     if (Auto_Start && CurrentRenderTarget && !CurrentSenderName.IsEmpty())
     {
         StartBroadcast(CurrentRenderTarget, CurrentSenderName, BroadcastFPS);
@@ -74,12 +114,26 @@ void USpoutSenderComponent::BeginPlay()
 #endif
 }
 
+void USpoutSenderComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+#if PLATFORM_WINDOWS
+    if (!bIsBroadcasting)
+    {
+        return;
+    }
+
+    UpdateTexture();
+#endif
+}
+
 void USpoutSenderComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     StopBroadcast();
+    ClearTickPrerequisite();
 
-#if PLATFORM_WINDOWS  
-    // Wait for queued render work that may still use SpoutBridge.
+#if PLATFORM_WINDOWS
     FlushRenderingCommands();
 
     if (SpoutBridge)
@@ -262,50 +316,39 @@ void USpoutSenderComponent::StartBroadcast(
         return;
     }
 
-    if (bIsBroadcasting)
-    {
-        StopBroadcast();
-    }
-
     CurrentRenderTarget = RenderTarget;
     CurrentSenderName = SenderName;
-    BroadcastFPS = FMath::Clamp(FPS, 0, 240);
+    BroadcastFPS = FPS;
     bIsBroadcasting = true;
-    NextStageSlot = 0;
 
     SpoutBridge->SetSenderName(TCHAR_TO_ANSI(*CurrentSenderName));
 
+    ApplyTickPrerequisite();
+
+    if (BroadcastFPS > 0)
+    {
+        SetComponentTickInterval(1.0f / static_cast<float>(FMath::Clamp(BroadcastFPS, 1, 240)));
+    }
+    else
+    {
+        SetComponentTickInterval(0.0f);
+    }
+
+    SetComponentTickEnabled(true);
+
     UpdateTexture();
-
-    if (BroadcastFPS <= 0)
-    {
-        return;
-    }
-
-    const float Interval = 1.0f / static_cast<float>(BroadcastFPS);
-
-    if (UWorld* World = GetWorld())
-    {
-        World->GetTimerManager().SetTimer(
-            BroadcastTimerHandle,
-            this,
-            &USpoutSenderComponent::UpdateTexture,
-            Interval,
-            true);
-    }
 #endif
 }
 
 void USpoutSenderComponent::StopBroadcast()
 {
-    if (UWorld* World = GetWorld())
-    {
-        World->GetTimerManager().ClearTimer(BroadcastTimerHandle);
-    }
-
     bIsBroadcasting = false;
+    SetComponentTickEnabled(false);
+    SetComponentTickInterval(0.0f);
+    ClearTickPrerequisite();
 
 #if PLATFORM_WINDOWS
+    // Wait until queued render-thread work is finished before releasing slot resources.
     FlushRenderingCommands();
 
     if (SpoutBridge)
@@ -319,6 +362,7 @@ void USpoutSenderComponent::StopBroadcast()
     CurrentRenderTarget = nullptr;
     CurrentSenderName.Empty();
     BroadcastFPS = 0;
+    NextStageSlot = 0;
 #endif
 }
 

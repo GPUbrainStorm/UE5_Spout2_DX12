@@ -12,6 +12,7 @@ struct ID3D11Resource;
 // Forward declare Spout classes
 class spoutDX;
 class spoutDX12;
+class AActor;
 
 UCLASS(ClassGroup = (Spout), meta = (BlueprintSpawnableComponent))
 class SPOUT2_DX12_API USpoutSenderComponent : public UActorComponent
@@ -42,12 +43,16 @@ public:
     int32 BroadcastFPS = 60;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
     bool bUseDoubleBuffer = false;
+    UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Spout")
+    TObjectPtr<AActor> TickAfterActor = nullptr;
 
-    FTimerHandle BroadcastTimerHandle;
+    UFUNCTION(BlueprintCallable, Category = "Spout")
+    void SetTickAfterActor(AActor* NewTickAfterActor);
 
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+    virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 private:
     struct FSpoutStageSlot
@@ -59,6 +64,11 @@ private:
         EPixelFormat Format = PF_Unknown;
         FRenderCommandFence Fence;
     };
+
+    void ApplyTickPrerequisite();
+    void ClearTickPrerequisite();
+
+    TWeakObjectPtr<AActor> AppliedTickAfterActor;
 
     spoutDX12* SpoutBridge = nullptr;
 
