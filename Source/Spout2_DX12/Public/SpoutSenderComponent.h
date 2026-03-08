@@ -47,11 +47,15 @@ protected:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-    // SpoutSenderComponent.cpp
     spoutDX12* SpoutBridge = nullptr;
-	ID3D11Resource* CurrWrappedResource = nullptr;
-	ID3D11Resource* StagingWrapped11 = nullptr;
-	FTextureRHIRef StagingRHI;
-	int32 StagingW = 0, StagingH = 0;
-	EPixelFormat StagingPF = PF_Unknown;
+
+    ID3D11Resource* StagingWrapped11 = nullptr;
+    FTextureRHIRef StagingRHI;
+    int32 StagingW = 0;
+    int32 StagingH = 0;
+    EPixelFormat StagingPF = PF_Unknown;
+
+    bool bIsBroadcasting = false;
+
+    void QueueSendFrame_RenderThread(FTextureRHIRef SrcRHI, int32 W, int32 H, EPixelFormat PF);
 };

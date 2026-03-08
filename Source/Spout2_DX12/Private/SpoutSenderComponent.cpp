@@ -8,7 +8,6 @@
 #include "RHI.h"
 #include "RHIResources.h"
 #include "RHICommandList.h"
-#include "RenderResource.h"
 #include "TextureResource.h"
 #include "Logging/LogMacros.h"
 
@@ -94,104 +93,106 @@ void USpoutSenderComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
     Super::EndPlay(EndPlayReason);
 }
 
+void USpoutSenderComponent::QueueSendFrame_RenderThread(FTextureRHIRef SrcRHI, int32 W, int32 H, EPixelFormat PF)
+{
+#if PLATFORM_WINDOWS
+    ENQUEUE_RENDER_COMMAND(SpoutSendFrame)(
+        [this, SrcRHI, W, H, PF](FRHICommandListImmediate& RHICmdList)
+        {
+            if (!SpoutBridge || !SrcRHI.IsValid())
+            {
+                return;
+            }
+
+            const bool bNeedCreate =
+                !StagingRHI.IsValid() ||
+                W != StagingW ||
+                H != StagingH ||
+                PF != StagingPF;
+
+            if (bNeedCreate)
+            {
+                if (StagingWrapped11)
+                {
+                    StagingWrapped11->Release();
+                    StagingWrapped11 = nullptr;
+                }
+
+                StagingRHI.SafeRelease();
+
+                FRHITextureCreateDesc Desc =
+                    FRHITextureCreateDesc::Create2D(TEXT("SpoutStagingShared"), W, H, PF)
+                    .SetFlags(ETextureCreateFlags::ShaderResource |
+                        ETextureCreateFlags::RenderTargetable |
+                        ETextureCreateFlags::Shared);
+
+                StagingRHI = RHICreateTexture(Desc);
+                StagingW = W;
+                StagingH = H;
+                StagingPF = PF;
+            }
+
+            if (!StagingRHI.IsValid())
+            {
+                return;
+            }
+
+            FRHITexture* Src = SrcRHI.GetReference();
+            FRHITexture* Dst = StagingRHI.GetReference();
+
+            RHICmdList.Transition(FRHITransitionInfo(Src, ERHIAccess::RTV, ERHIAccess::CopySrc));
+            RHICmdList.Transition(FRHITransitionInfo(Dst, ERHIAccess::Unknown, ERHIAccess::CopyDest));
+
+            FRHICopyTextureInfo CopyInfo;
+            RHICmdList.CopyTexture(Src, Dst, CopyInfo);
+
+            RHICmdList.Transition(FRHITransitionInfo(Dst, ERHIAccess::CopyDest, ERHIAccess::SRVMask));
+
+            if (!StagingWrapped11)
+            {
+                ID3D12Resource* NativeDX12 = static_cast<ID3D12Resource*>(StagingRHI->GetNativeResource());
+                if (!NativeDX12)
+                {
+                    return;
+                }
+
+                if (!SpoutBridge->WrapDX12Resource(NativeDX12, &StagingWrapped11, D3D12_RESOURCE_STATE_GENERIC_READ) ||
+                    !StagingWrapped11)
+                {
+                    return;
+                }
+            }
+
+            SpoutBridge->SendDX11Resource(StagingWrapped11);
+        });
+#endif
+}
+
 void USpoutSenderComponent::UpdateTexture()
 {
-#if PLATFORM_WINDOWS  
-    if (!SpoutBridge || !CurrentRenderTarget)
+#if PLATFORM_WINDOWS
+    if (!SpoutBridge || !CurrentRenderTarget || !bIsBroadcasting)
+    {
         return;
+    }
 
-    // Game thread: get source render target resource.
     FTextureRenderTargetResource* RTRes = CurrentRenderTarget->GameThread_GetRenderTargetResource();
     if (!RTRes)
+    {
         return;
+    }
 
     FTextureRHIRef SrcRHI = RTRes->GetRenderTargetTexture();
     if (!SrcRHI.IsValid())
+    {
         return;
+    }
 
     const int32 W = CurrentRenderTarget->SizeX;
     const int32 H = CurrentRenderTarget->SizeY;
     const EPixelFormat PF = CurrentRenderTarget->GetFormat();
 
-    // Recreate staging texture when size or format changes.
-    const bool NeedCreate = (!StagingRHI.IsValid() || W != StagingW || H != StagingH || PF != StagingPF);
-    if (NeedCreate)
-    {
-        StagingRHI.SafeRelease();
-        if (StagingWrapped11)
-        {
-            StagingWrapped11->Release();
-            StagingWrapped11 = nullptr;
-        }
-
-        FRHITextureCreateDesc Desc =
-            FRHITextureCreateDesc::Create2D(TEXT("SpoutStagingShared"), W, H, PF)
-            .SetFlags(ETextureCreateFlags::ShaderResource |
-                ETextureCreateFlags::RenderTargetable |
-                ETextureCreateFlags::Shared);
-
-        FRHITextureCreateDesc LocalDesc = Desc;
-
-        ENQUEUE_RENDER_COMMAND(CreateSpoutStagingShared)(
-            [this, LocalDesc](FRHICommandListImmediate& RHICmdList)
-        {
-            StagingRHI.SafeRelease();
-            StagingRHI = RHICreateTexture(LocalDesc);
-        });
-
-        // Wait until the render thread creates the texture.
-        FlushRenderingCommands();
-        StagingW = W;
-        StagingH = H;
-        StagingPF = PF;
-    }
-
-    if (!StagingRHI.IsValid())
-        return;
-
-    FTextureRHIRef LocalSrc = SrcRHI;
-    FTextureRHIRef LocalDst = StagingRHI;
-
-    // Queue a copy and wait until it finishes.
-    FGraphEventRef CopyDoneEvent = FFunctionGraphTask::CreateAndDispatchWhenReady(
-        [LocalSrc, LocalDst]()
-    {
-        ENQUEUE_RENDER_COMMAND(SpoutCopyRT)(
-            [LocalSrc, LocalDst](FRHICommandListImmediate& RHICmdList)
-        {
-            FRHITexture* Src = LocalSrc.GetReference();
-            FRHITexture* Dst = LocalDst.GetReference();
-
-            RHICmdList.Transition(FRHITransitionInfo(Src, ERHIAccess::RTV, ERHIAccess::CopySrc));
-            RHICmdList.Transition(FRHITransitionInfo(Dst, ERHIAccess::Unknown, ERHIAccess::CopyDest));
-
-            FRHICopyTextureInfo Info;
-            RHICmdList.CopyTexture(Src, Dst, Info);
-
-            RHICmdList.Transition(FRHITransitionInfo(Dst, ERHIAccess::CopyDest, ERHIAccess::SRVMask));
-        });
-    },
-        TStatId(),
-        nullptr,
-        ENamedThreads::AnyBackgroundThreadNormalTask
-    );
-
-    // Wait for the render-thread copy.
-    CopyDoneEvent->Wait();
-
-    // After copy, wrap and send on the game thread.
-    if (!StagingWrapped11)
-    {
-        ID3D12Resource* NativeDX12 = (ID3D12Resource*)StagingRHI->GetNativeResource();
-        if (!NativeDX12)
-            return;
-
-        if (!SpoutBridge->WrapDX12Resource(NativeDX12, &StagingWrapped11, D3D12_RESOURCE_STATE_GENERIC_READ) ||
-            !StagingWrapped11)
-            return;
-    }
-
-    SpoutBridge->SendDX11Resource(StagingWrapped11);
+    QueueSendFrame_RenderThread(SrcRHI, W, H, PF);
 #endif
 }
 
@@ -200,27 +201,32 @@ void USpoutSenderComponent::StartBroadcast(
     const FString& SenderName,
     int32 FPS)
 {
-#if PLATFORM_WINDOWS  
+#if PLATFORM_WINDOWS
     if (!SpoutBridge || !RenderTarget || SenderName.IsEmpty())
     {
         return;
     }
 
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(BroadcastTimerHandle);
+    }
+
     CurrentRenderTarget = RenderTarget;
     CurrentSenderName = SenderName;
-    BroadcastFPS = FPS;
+    BroadcastFPS = FMath::Clamp(FPS, 0, 240);
+    bIsBroadcasting = true;
 
     SpoutBridge->SetSenderName(TCHAR_TO_ANSI(*CurrentSenderName));
 
-    // Send one frame now.
     UpdateTexture();
 
-    if (FPS <= 0)
+    if (BroadcastFPS <= 0)
     {
         return;
     }
 
-    const float Interval = 1.0f / FMath::Clamp(FPS, 1, 240);
+    const float Interval = 1.0f / static_cast<float>(BroadcastFPS);
 
     if (UWorld* World = GetWorld())
     {
@@ -241,23 +247,25 @@ void USpoutSenderComponent::StopBroadcast()
         World->GetTimerManager().ClearTimer(BroadcastTimerHandle);
     }
 
-#if PLATFORM_WINDOWS  
-    // Wait so no render-thread work still uses these textures.
+    bIsBroadcasting = false;
+
+#if PLATFORM_WINDOWS
     FlushRenderingCommands();
 
     if (SpoutBridge)
     {
-        // Release current sender resources.
         SpoutBridge->ReleaseSender();
-        SpoutBridge->SetSenderName(""); // optional: clear name explicitly
+        SpoutBridge->SetSenderName("");
     }
 
     StagingRHI.SafeRelease();
+
     if (StagingWrapped11)
     {
         StagingWrapped11->Release();
         StagingWrapped11 = nullptr;
     }
+
     StagingW = 0;
     StagingH = 0;
     StagingPF = PF_Unknown;
@@ -271,27 +279,29 @@ void USpoutSenderComponent::StopBroadcast()
 // Change render target at runtime.
 void USpoutSenderComponent::ChangeRenderTarget(UTextureRenderTarget2D* NewRenderTarget)
 {
-#if PLATFORM_WINDOWS  
+#if PLATFORM_WINDOWS
     if (NewRenderTarget == CurrentRenderTarget)
     {
         return;
     }
 
+    FlushRenderingCommands();
+
     CurrentRenderTarget = NewRenderTarget;
 
-    // Force staging texture recreate on next UpdateTexture().
     StagingRHI.SafeRelease();
+
     if (StagingWrapped11)
     {
         StagingWrapped11->Release();
         StagingWrapped11 = nullptr;
     }
+
     StagingW = 0;
     StagingH = 0;
     StagingPF = PF_Unknown;
 
-    // If broadcasting, send one frame now.
-    if (BroadcastFPS > 0 && CurrentRenderTarget)
+    if (bIsBroadcasting && CurrentRenderTarget)
     {
         UpdateTexture();
     }
