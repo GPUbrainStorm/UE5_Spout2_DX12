@@ -9,7 +9,7 @@ This plugin enables **Spout sending and receiving** directly in Unreal (Editor &
 
 > **Note:** Beta release.
 
-**Tested:** UE **5.2.1** , **5.4.4** , **5.6.1** & **5.7.0** on Windows (DX12).
+**Tested:** UE **5.2.1** , **5.4.4** , **5.6.1** & **5.7.2** on Windows (DX12).
 
 ---
 
