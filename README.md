@@ -86,7 +86,7 @@ Receive from any Spout2 sender (OBS Spout plugin, other apps, or another UE inst
 
 ## Compatibility
 
-* **Prebuilt (binary) releases:** UE **5.2.1**, **5.4.4**, **5.6.1** and **5.7.0**.
+* **Prebuilt (binary) releases:** UE **5.2**, **5.4**, **5.6** and **5.7**.
 * **Source:** Should compile for other UE5 minors.
   If you struggle on a specific version, **open an issue** with the UE version and I’ll try to provide a packaged build ASAP.
 
