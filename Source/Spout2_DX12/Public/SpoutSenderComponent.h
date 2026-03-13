@@ -9,7 +9,6 @@
 
 struct ID3D11Resource;
 
-// Forward declare Spout classes
 class spoutDX;
 class spoutDX12;
 class AActor;

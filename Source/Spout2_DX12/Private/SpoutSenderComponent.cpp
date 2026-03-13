@@ -348,7 +348,6 @@ void USpoutSenderComponent::StopBroadcast()
     ClearTickPrerequisite();
 
 #if PLATFORM_WINDOWS
-    // Wait until queued render-thread work is finished before releasing slot resources.
     FlushRenderingCommands();
 
     if (SpoutBridge)
@@ -366,7 +365,6 @@ void USpoutSenderComponent::StopBroadcast()
 #endif
 }
 
-// Change render target at runtime.
 void USpoutSenderComponent::ChangeRenderTarget(UTextureRenderTarget2D* NewRenderTarget)
 {
 #if PLATFORM_WINDOWS

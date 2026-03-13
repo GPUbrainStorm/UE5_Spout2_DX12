@@ -66,19 +66,19 @@ public:
 	TObjectPtr<UTextureRenderTarget2D> InternalRT_B;
 
 	// Debug / runtime stats
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spout Receiver|Stats")
+	UPROPERTY(BlueprintReadOnly, Category = "Spout Receiver|Stats")
 	float CopiesPerSecond = 0.0f;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spout Receiver|Stats")
+	UPROPERTY(BlueprintReadOnly, Category = "Spout Receiver|Stats")
 	float Flush1PerSecond = 0.0f;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spout Receiver|Stats")
+	UPROPERTY(BlueprintReadOnly, Category = "Spout Receiver|Stats")
 	float FlushPerSecond = 0.0f;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spout Receiver|Stats")
+	UPROPERTY(BlueprintReadOnly, Category = "Spout Receiver|Stats")
 	int32 ReconnectCount = 0;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Spout Receiver|Stats")
+	UPROPERTY(BlueprintReadOnly, Category = "Spout Receiver|Stats")
 	int32 MissedFrames = 0;
 
 protected:
