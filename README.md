@@ -39,6 +39,7 @@ DLLs are staged automatically next to the packaged EXE. Just package as usual.
 
 * Set **Render Target**, **Sender Name**, **FPS**.
 * Enable **Auto_Start** to begin on `BeginPlay`.
+* `UseDoubleBuffer` - optional double buffer for smoother playeback and frame pacing for higher GPU utilizatin and memory usage.
 
 **Blueprints**
 
@@ -48,7 +49,8 @@ DLLs are staged automatically next to the packaged EXE. Just package as usual.
 > Tip: Use `FPS = 0` to push a single frame.
 
 **Examples**
-<img width="1916" height="660" alt="image" src="https://github.com/user-attachments/assets/34a65bd8-56ad-4617-b94a-25234c41555e" />
+<img width="1917" height="624" alt="image" src="https://github.com/user-attachments/assets/caaa8241-5966-4f31-89c7-9c1b86a7c027" />
+
 <img width="990" height="471" alt="image" src="https://github.com/user-attachments/assets/42fca5a6-5341-4664-9da9-17ee1c7f5808" />
 
 
@@ -71,10 +73,13 @@ Receive from any Spout2 sender (OBS Spout plugin, other apps, or another UE inst
 * `OutputRenderTarget` — destination RT
 * `TargetFPS` — receive cadence (`0` = one frame)
 * `SpoutSenderName` — optional explicit sender
+* `UseDoubleBuffer` - optional double buffer for smoother playeback and frame pacing for higher GPU utilizatin and memory usage.
 
 > You can change properties at runtime; call `StopReceiving()` → update settings → `StartReceiving()`.
 
-**Screenshots** <img width="1571" height="716" alt="image" src="https://github.com/user-attachments/assets/120a29e2-ccdb-47cb-ad1f-ef94c5f379a7" /> <img width="892" height="565" alt="image" src="https://github.com/user-attachments/assets/83205f90-7f36-42f8-972f-9b1cebe6e875" />
+**Screenshots** 
+<img width="1440" height="607" alt="image" src="https://github.com/user-attachments/assets/82170b5b-7861-4d64-87bc-2df68b8b7a50" />
+ <img width="892" height="565" alt="image" src="https://github.com/user-attachments/assets/83205f90-7f36-42f8-972f-9b1cebe6e875" />
 
 ---
 
