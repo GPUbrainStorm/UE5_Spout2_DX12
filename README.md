@@ -7,7 +7,7 @@ You can join the discord server for futher support from the following link:
 
 This plugin enables **Spout sending and receiving** directly in Unreal (Editor & packaged builds).
 
-> **Note:** Beta release.
+> **Note:** This branch is associated with [v1.1.0 available here](https://github.com/GPUbrainStorm/UE5_Spout2_DX12/releases/tag/v1.1.0).
 
 **Tested:** UE **5.2.1** , **5.4.4** , **5.6.1** & **5.7.2** on Windows (DX12).
 
