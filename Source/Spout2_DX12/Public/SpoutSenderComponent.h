@@ -43,13 +43,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
     FString CurrentSenderName = "Broadcast Component";
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
+    ESpoutSenderSourceType SourceType = ESpoutSenderSourceType::RenderTarget;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout", meta = (EditCondition = "SourceType == ESpoutSenderSourceType::RenderTarget", EditConditionHides))
     UTextureRenderTarget2D* CurrentRenderTarget = nullptr;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
     int32 BroadcastFPS = 60;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
     bool bUseDoubleBuffer = false;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
-    ESpoutSenderSourceType SourceType = ESpoutSenderSourceType::RenderTarget;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
     ESpoutWorldBootstrapPolicy StartupPolicy = ESpoutWorldBootstrapPolicy::EditorAndGame;
     UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Spout")
