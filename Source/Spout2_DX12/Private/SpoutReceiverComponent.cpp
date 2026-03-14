@@ -93,9 +93,7 @@ namespace
 {
 	static bool IsReceiverEditorWorld(const UWorld* World)
 	{
-		return World &&
-			(World->WorldType == EWorldType::Editor ||
-			 World->WorldType == EWorldType::EditorPreview);
+		return World && World->WorldType == EWorldType::Editor;
 	}
 }
 
