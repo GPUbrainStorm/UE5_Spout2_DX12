@@ -8,10 +8,15 @@
 #include "RHI.h"
 #include "RHIResources.h"
 #include "RHICommandList.h"
-#include "Containers/Map.h"
 #include "TextureResource.h"
 #include "Logging/LogMacros.h"
 #include "UObject/UnrealType.h"
+#include "UObject/UObjectIterator.h"
+
+#if WITH_EDITOR
+#include "Editor.h"
+#include "UnrealClient.h"
+#endif
 
 #if PLATFORM_WINDOWS
 #include "Windows/WindowsHWrapper.h"
@@ -44,8 +49,6 @@ THIRD_PARTY_INCLUDES_END
 
 namespace
 {
-    static TMap<FString, TWeakObjectPtr<USpoutSenderComponent>> GEditorSenderOwners;
-
     static bool IsSenderEditorWorld(const UWorld* World)
     {
         return World && World->WorldType == EWorldType::Editor;
@@ -104,6 +107,89 @@ bool USpoutSenderComponent::IsSupportedWorld() const
 bool USpoutSenderComponent::IsD3D12Active() const
 {
     return GDynamicRHI && FString(GDynamicRHI->GetName()) == TEXT("D3D12");
+}
+
+bool USpoutSenderComponent::IsUsingEditorViewportSource() const
+{
+#if WITH_EDITOR
+    return bUseEditorViewportSource && (IsEditorWorld() || IsPreviewWorld());
+#else
+    return false;
+#endif
+}
+
+bool USpoutSenderComponent::HasValidConfiguredSource() const
+{
+    return IsUsingEditorViewportSource() || CurrentRenderTarget != nullptr;
+}
+
+bool USpoutSenderComponent::ResolveCurrentSource(
+    FTextureRHIRef& OutTexture,
+    int32& OutWidth,
+    int32& OutHeight,
+    EPixelFormat& OutFormat) const
+{
+    OutTexture.SafeRelease();
+    OutWidth = 0;
+    OutHeight = 0;
+    OutFormat = PF_Unknown;
+
+#if WITH_EDITOR
+    if (IsUsingEditorViewportSource())
+    {
+        if (!GEditor)
+        {
+            return false;
+        }
+
+        FViewport* ActiveViewport = GEditor->GetActiveViewport();
+        if (!ActiveViewport)
+        {
+            return false;
+        }
+
+        FTexture2DRHIRef ViewportTexture = ActiveViewport->GetRenderTargetTexture();
+        if (!ViewportTexture.IsValid())
+        {
+            return false;
+        }
+
+        const FIntPoint Size = ActiveViewport->GetSizeXY();
+        if (Size.X <= 0 || Size.Y <= 0)
+        {
+            return false;
+        }
+
+        OutTexture = ViewportTexture;
+        OutWidth = Size.X;
+        OutHeight = Size.Y;
+        OutFormat = ViewportTexture->GetFormat();
+        return true;
+    }
+#endif
+
+    if (!CurrentRenderTarget)
+    {
+        return false;
+    }
+
+    FTextureRenderTargetResource* RTRes = CurrentRenderTarget->GameThread_GetRenderTargetResource();
+    if (!RTRes)
+    {
+        return false;
+    }
+
+    FTextureRHIRef SourceTexture = RTRes->GetRenderTargetTexture();
+    if (!SourceTexture.IsValid())
+    {
+        return false;
+    }
+
+    OutTexture = SourceTexture;
+    OutWidth = CurrentRenderTarget->SizeX;
+    OutHeight = CurrentRenderTarget->SizeY;
+    OutFormat = CurrentRenderTarget->GetFormat();
+    return true;
 }
 
 void USpoutSenderComponent::EnsureBridge()
@@ -193,7 +279,7 @@ void USpoutSenderComponent::RefreshEditorState()
 
     EnsureBridge();
 
-    if (bWantsBroadcasting && CurrentRenderTarget && !CurrentSenderName.IsEmpty())
+    if (bWantsBroadcasting && HasValidConfiguredSource() && !CurrentSenderName.IsEmpty())
     {
         StartBroadcast(CurrentRenderTarget, CurrentSenderName, BroadcastFPS);
     }
@@ -221,16 +307,29 @@ bool USpoutSenderComponent::AcquireEditorOwnership(const FString& SenderName)
         return true;
     }
 
-    if (OwnedEditorSenderKey == SenderName)
+    for (TObjectIterator<USpoutSenderComponent> It; It; ++It)
     {
-        return true;
-    }
+        USpoutSenderComponent* ExistingOwner = *It;
+        if (!ExistingOwner || ExistingOwner == this || ExistingOwner->IsTemplate())
+        {
+            continue;
+        }
 
-    TWeakObjectPtr<USpoutSenderComponent>* ExistingOwnerPtr = GEditorSenderOwners.Find(SenderName);
-    USpoutSenderComponent* ExistingOwner = ExistingOwnerPtr ? ExistingOwnerPtr->Get() : nullptr;
+        if (ExistingOwner->CurrentSenderName != SenderName)
+        {
+            continue;
+        }
 
-    if (ExistingOwner && ExistingOwner != this)
-    {
+        if (!ExistingOwner->IsRegistered())
+        {
+            continue;
+        }
+
+        if (!ExistingOwner->IsEditorWorld() && !ExistingOwner->IsPreviewWorld())
+        {
+            continue;
+        }
+
         if (IsPreviewWorld())
         {
             return false;
@@ -239,35 +338,17 @@ bool USpoutSenderComponent::AcquireEditorOwnership(const FString& SenderName)
         if (ExistingOwner->IsPreviewWorld())
         {
             ExistingOwner->StopBroadcastInternal(false, false);
+            continue;
         }
-        else
-        {
-            return false;
-        }
+
+        return false;
     }
 
-    ReleaseEditorOwnership();
-    GEditorSenderOwners.Add(SenderName, this);
-    OwnedEditorSenderKey = SenderName;
     return true;
 }
 
 void USpoutSenderComponent::ReleaseEditorOwnership()
 {
-    if (OwnedEditorSenderKey.IsEmpty())
-    {
-        return;
-    }
-
-    if (TWeakObjectPtr<USpoutSenderComponent>* ExistingOwnerPtr = GEditorSenderOwners.Find(OwnedEditorSenderKey))
-    {
-        if (!ExistingOwnerPtr->IsValid() || ExistingOwnerPtr->Get() == this)
-        {
-            GEditorSenderOwners.Remove(OwnedEditorSenderKey);
-        }
-    }
-
-    OwnedEditorSenderKey.Empty();
 }
 
 void USpoutSenderComponent::ClearTickPrerequisite()
@@ -340,7 +421,7 @@ void USpoutSenderComponent::OnRegister()
 
     EnsureBridge();
 
-    if (bWantsBroadcasting && CurrentRenderTarget && !CurrentSenderName.IsEmpty())
+    if (bWantsBroadcasting && HasValidConfiguredSource() && !CurrentSenderName.IsEmpty())
     {
         StartBroadcast(CurrentRenderTarget, CurrentSenderName, BroadcastFPS);
     }
@@ -380,7 +461,7 @@ void USpoutSenderComponent::BeginPlay()
     EnsureBridge();
     ApplyTickPrerequisite();
 
-    if (bWantsBroadcasting && CurrentRenderTarget && !CurrentSenderName.IsEmpty())
+    if (bWantsBroadcasting && HasValidConfiguredSource() && !CurrentSenderName.IsEmpty())
     {
         StartBroadcast(CurrentRenderTarget, CurrentSenderName, BroadcastFPS);
     }
@@ -436,6 +517,7 @@ void USpoutSenderComponent::PostEditChangeProperty(FPropertyChangedEvent& Proper
         PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, CurrentRenderTarget) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, BroadcastFPS) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, bUseDoubleBuffer) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, bUseEditorViewportSource) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, StartupPolicy) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, TickAfterActor))
     {
@@ -549,26 +631,20 @@ void USpoutSenderComponent::ResetStageSlots()
 void USpoutSenderComponent::UpdateTexture()
 {
 #if PLATFORM_WINDOWS
-    if (!SpoutBridge || !CurrentRenderTarget || !bIsBroadcasting)
+    if (!SpoutBridge || !bIsBroadcasting)
     {
         return;
     }
 
-    FTextureRenderTargetResource* RTRes = CurrentRenderTarget->GameThread_GetRenderTargetResource();
-    if (!RTRes)
+    FTextureRHIRef SrcRHI;
+    int32 W = 0;
+    int32 H = 0;
+    EPixelFormat PF = PF_Unknown;
+
+    if (!ResolveCurrentSource(SrcRHI, W, H, PF))
     {
         return;
     }
-
-    FTextureRHIRef SrcRHI = RTRes->GetRenderTargetTexture();
-    if (!SrcRHI.IsValid())
-    {
-        return;
-    }
-
-    const int32 W = CurrentRenderTarget->SizeX;
-    const int32 H = CurrentRenderTarget->SizeY;
-    const EPixelFormat PF = CurrentRenderTarget->GetFormat();
 
     const int32 SlotCount = bUseDoubleBuffer ? 2 : 1;
 
@@ -627,7 +703,12 @@ void USpoutSenderComponent::StartBroadcast(
 
     EnsureBridge();
 
-    if (!SpoutBridge || !RenderTarget || SenderName.IsEmpty())
+    if (!SpoutBridge || SenderName.IsEmpty())
+    {
+        return;
+    }
+
+    if (!bUseEditorViewportSource && !RenderTarget)
     {
         return;
     }
@@ -637,7 +718,7 @@ void USpoutSenderComponent::StartBroadcast(
         return;
     }
 
-    CurrentRenderTarget = RenderTarget;
+    CurrentRenderTarget = bUseEditorViewportSource ? nullptr : RenderTarget;
     CurrentSenderName = SenderName;
     BroadcastFPS = FPS;
     bIsBroadcasting = true;

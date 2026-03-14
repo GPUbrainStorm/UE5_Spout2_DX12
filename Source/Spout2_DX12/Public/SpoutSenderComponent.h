@@ -47,6 +47,8 @@ public:
     int32 BroadcastFPS = 60;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
     bool bUseDoubleBuffer = false;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout", meta = (DisplayName = "Use Editor Viewport Source"))
+    bool bUseEditorViewportSource = false;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
     ESpoutWorldBootstrapPolicy StartupPolicy = ESpoutWorldBootstrapPolicy::EditorAndGame;
     UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Spout")
@@ -81,6 +83,9 @@ private:
     bool IsPreviewWorld() const;
     bool IsSupportedWorld() const;
     bool IsD3D12Active() const;
+    bool IsUsingEditorViewportSource() const;
+    bool HasValidConfiguredSource() const;
+    bool ResolveCurrentSource(FTextureRHIRef& OutTexture, int32& OutWidth, int32& OutHeight, EPixelFormat& OutFormat) const;
 
     void EnsureBridge();
     void ShutdownBridge();
@@ -103,7 +108,6 @@ private:
     bool bIsBroadcasting = false;
     bool bWantsBroadcasting = false;
     bool bBroadcastIntentInitialized = false;
-    FString OwnedEditorSenderKey;
 
     void ResetStageSlots();
     void QueueSendFrame_RenderThread(FTextureRHIRef SrcRHI, int32 W, int32 H, EPixelFormat PF, int32 SlotIndex);

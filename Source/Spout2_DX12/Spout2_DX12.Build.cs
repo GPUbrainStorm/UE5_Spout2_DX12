@@ -43,6 +43,11 @@ public class Spout2_DX12 : ModuleRules
             "D3D12RHI",
         });
 
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.Add("UnrealEd");
+        }
+
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {
             string TP = Path.Combine(PluginDirectory, "Source", "ThirdParty");
