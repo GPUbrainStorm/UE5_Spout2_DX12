@@ -654,6 +654,12 @@ void USpoutReceiverComponent::StartReceiving()
 	if (!CacheDX11FenceObjects())
 	{
 		UE_LOG(LogSpoutRX, Error, TEXT("Failed to initialize D3D11 fence objects."));
+		if (SpoutDX12)
+		{
+			SpoutDX12->ReleaseReceiver();
+			SpoutDX12->CloseDirectX12();
+		}
+		ReleaseFenceObjects();
 		return;
 	}
 
@@ -710,6 +716,10 @@ void USpoutReceiverComponent::StopReceivingInternal(bool bClearDesiredState)
 		bWantsReceiving = false;
 		bReceiveIntentInitialized = true;
 	}
+
+#if PLATFORM_WINDOWS
+	FlushRenderingCommands();
+#endif
 	
 	// Release resources and close Spout devices.
 	for (int i = 0; i < 2; ++i)

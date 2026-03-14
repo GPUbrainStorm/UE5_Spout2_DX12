@@ -359,7 +359,7 @@ bool USpoutSenderComponent::AcquireEditorOwnership(const FString& SenderName)
     for (TObjectIterator<USpoutSenderComponent> It; It; ++It)
     {
         USpoutSenderComponent* ExistingOwner = *It;
-        if (!ExistingOwner || ExistingOwner == this || ExistingOwner->IsTemplate())
+        if (!IsValid(ExistingOwner) || ExistingOwner == this || ExistingOwner->IsTemplate())
         {
             continue;
         }
@@ -370,6 +370,16 @@ bool USpoutSenderComponent::AcquireEditorOwnership(const FString& SenderName)
         }
 
         if (!ExistingOwner->IsRegistered())
+        {
+            continue;
+        }
+
+        if (!ExistingOwner->GetWorld())
+        {
+            continue;
+        }
+
+        if (ExistingOwner->IsBeingDestroyed() || !ExistingOwner->bIsBroadcasting)
         {
             continue;
         }
