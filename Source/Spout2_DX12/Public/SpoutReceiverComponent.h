@@ -6,6 +6,7 @@
 #include "Engine/Texture2D.h"
 #include "RHIResources.h"
 #include "HAL/PlatformTime.h"
+#include "SpoutWorldPolicy.h"
 #include "SpoutReceiverComponent.generated.h"
 
 #if PLATFORM_WINDOWS
@@ -68,6 +69,8 @@ public:
 	// Keep OutputRenderTarget stable for users; use internal buffers for receiving.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout Receiver")
 	bool bUseDoubleBuffer = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout Receiver")
+	ESpoutWorldBootstrapPolicy StartupPolicy = ESpoutWorldBootstrapPolicy::EditorAndGame;
 
 	// Internal render targets for receiving and copying (when using stable user RT option).
 	UPROPERTY(Transient)
@@ -104,6 +107,7 @@ protected:
 
 private:
     bool IsEditorWorld() const;
+    bool IsPreviewWorld() const;
     bool IsSupportedWorld() const;
     bool IsD3D12Active() const;
     void RecomputeTargetInterval();

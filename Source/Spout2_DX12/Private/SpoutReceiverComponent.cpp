@@ -95,6 +95,11 @@ namespace
 	{
 		return World && World->WorldType == EWorldType::Editor;
 	}
+
+	static bool IsReceiverPreviewWorld(const UWorld* World)
+	{
+		return World && World->WorldType == EWorldType::EditorPreview;
+	}
 }
 
 // Constructor / destructor.
@@ -118,10 +123,35 @@ bool USpoutReceiverComponent::IsEditorWorld() const
 	return IsReceiverEditorWorld(GetWorld());
 }
 
+bool USpoutReceiverComponent::IsPreviewWorld() const
+{
+	return IsReceiverPreviewWorld(GetWorld());
+}
+
 bool USpoutReceiverComponent::IsSupportedWorld() const
 {
 	const UWorld* World = GetWorld();
-	return World && (World->IsGameWorld() || IsReceiverEditorWorld(World));
+	if (!World)
+	{
+		return false;
+	}
+
+	if (World->IsGameWorld())
+	{
+		return true;
+	}
+
+	switch (StartupPolicy)
+	{
+	case ESpoutWorldBootstrapPolicy::GameOnly:
+		return false;
+	case ESpoutWorldBootstrapPolicy::EditorAndGame:
+		return IsReceiverEditorWorld(World);
+	case ESpoutWorldBootstrapPolicy::EditorGameAndSinglePreview:
+		return IsReceiverEditorWorld(World) || IsReceiverPreviewWorld(World);
+	default:
+		return false;
+	}
 }
 
 bool USpoutReceiverComponent::IsD3D12Active() const
@@ -147,7 +177,7 @@ void USpoutReceiverComponent::RecomputeTargetInterval()
 void USpoutReceiverComponent::RefreshEditorState()
 {
 #if PLATFORM_WINDOWS
-	if (!IsEditorWorld() || !IsSupportedWorld())
+	if ((!IsEditorWorld() && !IsPreviewWorld()) || !IsSupportedWorld())
 	{
 		return;
 	}
@@ -198,7 +228,7 @@ void USpoutReceiverComponent::OnRegister()
 	ResetStats();
 	RecomputeTargetInterval();
 
-	if (!IsEditorWorld())
+	if (!IsEditorWorld() && !IsPreviewWorld())
 	{
 		return;
 	}
@@ -249,7 +279,8 @@ void USpoutReceiverComponent::PostEditChangeProperty(FPropertyChangedEvent& Prop
 		PropertyName == GET_MEMBER_NAME_CHECKED(USpoutReceiverComponent, OutputRenderTarget) ||
 		PropertyName == GET_MEMBER_NAME_CHECKED(USpoutReceiverComponent, TargetFPS) ||
 		PropertyName == GET_MEMBER_NAME_CHECKED(USpoutReceiverComponent, SpoutSenderName) ||
-		PropertyName == GET_MEMBER_NAME_CHECKED(USpoutReceiverComponent, bUseDoubleBuffer))
+		PropertyName == GET_MEMBER_NAME_CHECKED(USpoutReceiverComponent, bUseDoubleBuffer) ||
+		PropertyName == GET_MEMBER_NAME_CHECKED(USpoutReceiverComponent, StartupPolicy))
 	{
 		RefreshEditorState();
 	}
@@ -262,7 +293,7 @@ void USpoutReceiverComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (!IsSupportedWorld() || IsEditorWorld())
+	if (!IsSupportedWorld() || IsEditorWorld() || IsPreviewWorld())
 	{
 		return;
 	}

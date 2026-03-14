@@ -5,6 +5,7 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "RHIResources.h"
 #include "RenderCommandFence.h"
+#include "SpoutWorldPolicy.h"
 #include "SpoutSenderComponent.generated.h"
 
 struct ID3D11Resource;
@@ -46,6 +47,8 @@ public:
     int32 BroadcastFPS = 60;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
     bool bUseDoubleBuffer = false;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
+    ESpoutWorldBootstrapPolicy StartupPolicy = ESpoutWorldBootstrapPolicy::EditorAndGame;
     UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Spout")
     TObjectPtr<AActor> TickAfterActor = nullptr;
 
@@ -75,6 +78,7 @@ private:
     };
 
     bool IsEditorWorld() const;
+    bool IsPreviewWorld() const;
     bool IsSupportedWorld() const;
     bool IsD3D12Active() const;
 
@@ -83,6 +87,8 @@ private:
     void RefreshEditorState();
     void StopBroadcastInternal(bool bClearConfiguration, bool bClearDesiredState);
     void InitializeDesiredState();
+    bool AcquireEditorOwnership(const FString& SenderName);
+    void ReleaseEditorOwnership();
 
     void ApplyTickPrerequisite();
     void ClearTickPrerequisite();
@@ -97,6 +103,7 @@ private:
     bool bIsBroadcasting = false;
     bool bWantsBroadcasting = false;
     bool bBroadcastIntentInitialized = false;
+    FString OwnedEditorSenderKey;
 
     void ResetStageSlots();
     void QueueSendFrame_RenderThread(FTextureRHIRef SrcRHI, int32 W, int32 H, EPixelFormat PF, int32 SlotIndex);

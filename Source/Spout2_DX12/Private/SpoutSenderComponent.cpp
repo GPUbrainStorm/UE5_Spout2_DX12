@@ -8,6 +8,7 @@
 #include "RHI.h"
 #include "RHIResources.h"
 #include "RHICommandList.h"
+#include "Containers/Map.h"
 #include "TextureResource.h"
 #include "Logging/LogMacros.h"
 #include "UObject/UnrealType.h"
@@ -43,9 +44,16 @@ THIRD_PARTY_INCLUDES_END
 
 namespace
 {
+    static TMap<FString, TWeakObjectPtr<USpoutSenderComponent>> GEditorSenderOwners;
+
     static bool IsSenderEditorWorld(const UWorld* World)
     {
         return World && World->WorldType == EWorldType::Editor;
+    }
+
+    static bool IsSenderPreviewWorld(const UWorld* World)
+    {
+        return World && World->WorldType == EWorldType::EditorPreview;
     }
 }
 
@@ -62,10 +70,35 @@ bool USpoutSenderComponent::IsEditorWorld() const
     return IsSenderEditorWorld(GetWorld());
 }
 
+bool USpoutSenderComponent::IsPreviewWorld() const
+{
+    return IsSenderPreviewWorld(GetWorld());
+}
+
 bool USpoutSenderComponent::IsSupportedWorld() const
 {
     const UWorld* World = GetWorld();
-    return World && (World->IsGameWorld() || IsSenderEditorWorld(World));
+    if (!World)
+    {
+        return false;
+    }
+
+    if (World->IsGameWorld())
+    {
+        return true;
+    }
+
+    switch (StartupPolicy)
+    {
+    case ESpoutWorldBootstrapPolicy::GameOnly:
+        return false;
+    case ESpoutWorldBootstrapPolicy::EditorAndGame:
+        return IsSenderEditorWorld(World);
+    case ESpoutWorldBootstrapPolicy::EditorGameAndSinglePreview:
+        return IsSenderEditorWorld(World) || IsSenderPreviewWorld(World);
+    default:
+        return false;
+    }
 }
 
 bool USpoutSenderComponent::IsD3D12Active() const
@@ -104,6 +137,7 @@ void USpoutSenderComponent::StopBroadcastInternal(bool bClearConfiguration, bool
     SetComponentTickEnabled(false);
     SetComponentTickInterval(0.0f);
     ClearTickPrerequisite();
+    ReleaseEditorOwnership();
 
 #if PLATFORM_WINDOWS
     FlushRenderingCommands();
@@ -141,7 +175,7 @@ void USpoutSenderComponent::StopBroadcastInternal(bool bClearConfiguration, bool
 void USpoutSenderComponent::RefreshEditorState()
 {
 #if PLATFORM_WINDOWS
-    if (!IsEditorWorld() || !IsSupportedWorld())
+    if ((!IsEditorWorld() && !IsPreviewWorld()) || !IsSupportedWorld())
     {
         return;
     }
@@ -173,6 +207,67 @@ void USpoutSenderComponent::InitializeDesiredState()
         bWantsBroadcasting = Auto_Start;
         bBroadcastIntentInitialized = true;
     }
+}
+
+bool USpoutSenderComponent::AcquireEditorOwnership(const FString& SenderName)
+{
+    if (!IsEditorWorld() && !IsPreviewWorld())
+    {
+        return true;
+    }
+
+    if (StartupPolicy != ESpoutWorldBootstrapPolicy::EditorGameAndSinglePreview || SenderName.IsEmpty())
+    {
+        return true;
+    }
+
+    if (OwnedEditorSenderKey == SenderName)
+    {
+        return true;
+    }
+
+    TWeakObjectPtr<USpoutSenderComponent>* ExistingOwnerPtr = GEditorSenderOwners.Find(SenderName);
+    USpoutSenderComponent* ExistingOwner = ExistingOwnerPtr ? ExistingOwnerPtr->Get() : nullptr;
+
+    if (ExistingOwner && ExistingOwner != this)
+    {
+        if (IsPreviewWorld())
+        {
+            return false;
+        }
+
+        if (ExistingOwner->IsPreviewWorld())
+        {
+            ExistingOwner->StopBroadcastInternal(false, false);
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    ReleaseEditorOwnership();
+    GEditorSenderOwners.Add(SenderName, this);
+    OwnedEditorSenderKey = SenderName;
+    return true;
+}
+
+void USpoutSenderComponent::ReleaseEditorOwnership()
+{
+    if (OwnedEditorSenderKey.IsEmpty())
+    {
+        return;
+    }
+
+    if (TWeakObjectPtr<USpoutSenderComponent>* ExistingOwnerPtr = GEditorSenderOwners.Find(OwnedEditorSenderKey))
+    {
+        if (!ExistingOwnerPtr->IsValid() || ExistingOwnerPtr->Get() == this)
+        {
+            GEditorSenderOwners.Remove(OwnedEditorSenderKey);
+        }
+    }
+
+    OwnedEditorSenderKey.Empty();
 }
 
 void USpoutSenderComponent::ClearTickPrerequisite()
@@ -211,7 +306,7 @@ void USpoutSenderComponent::SetTickAfterActor(AActor* NewTickAfterActor)
     ApplyTickPrerequisite();
 
 #if WITH_EDITOR
-    if (IsEditorWorld())
+    if (IsEditorWorld() || IsPreviewWorld())
     {
         RefreshEditorState();
     }
@@ -231,7 +326,7 @@ void USpoutSenderComponent::OnRegister()
 
     InitializeDesiredState();
 
-    if (!IsEditorWorld())
+    if (!IsEditorWorld() && !IsPreviewWorld())
     {
         return;
     }
@@ -268,7 +363,7 @@ void USpoutSenderComponent::BeginPlay()
     Super::BeginPlay();
 
 #if PLATFORM_WINDOWS
-    if (!IsSupportedWorld() || IsEditorWorld())
+    if (!IsSupportedWorld() || IsEditorWorld() || IsPreviewWorld())
     {
         return;
     }
@@ -341,6 +436,7 @@ void USpoutSenderComponent::PostEditChangeProperty(FPropertyChangedEvent& Proper
         PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, CurrentRenderTarget) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, BroadcastFPS) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, bUseDoubleBuffer) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, StartupPolicy) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, TickAfterActor))
     {
         RefreshEditorState();
@@ -532,6 +628,11 @@ void USpoutSenderComponent::StartBroadcast(
     EnsureBridge();
 
     if (!SpoutBridge || !RenderTarget || SenderName.IsEmpty())
+    {
+        return;
+    }
+
+    if (!AcquireEditorOwnership(SenderName))
     {
         return;
     }
