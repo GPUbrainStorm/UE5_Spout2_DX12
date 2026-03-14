@@ -13,6 +13,10 @@ class spoutDX;
 class spoutDX12;
 class AActor;
 
+#if WITH_EDITOR
+struct FPropertyChangedEvent;
+#endif
+
 UCLASS(ClassGroup = (Spout), meta = (BlueprintSpawnableComponent))
 class SPOUT2_DX12_API USpoutSenderComponent : public UActorComponent
 {
@@ -49,9 +53,15 @@ public:
     void SetTickAfterActor(AActor* NewTickAfterActor);
 
 protected:
+    virtual void OnRegister() override;
+    virtual void OnUnregister() override;
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
+#if WITH_EDITOR
+    virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
 
 private:
     struct FSpoutStageSlot
@@ -64,6 +74,16 @@ private:
         FRenderCommandFence Fence;
     };
 
+    bool IsEditorWorld() const;
+    bool IsSupportedWorld() const;
+    bool IsD3D12Active() const;
+
+    void EnsureBridge();
+    void ShutdownBridge();
+    void RefreshEditorState();
+    void StopBroadcastInternal(bool bClearConfiguration, bool bClearDesiredState);
+    void InitializeDesiredState();
+
     void ApplyTickPrerequisite();
     void ClearTickPrerequisite();
 
@@ -75,6 +95,8 @@ private:
     int32 NextStageSlot = 0;
 
     bool bIsBroadcasting = false;
+    bool bWantsBroadcasting = false;
+    bool bBroadcastIntentInitialized = false;
 
     void ResetStageSlots();
     void QueueSendFrame_RenderThread(FTextureRHIRef SrcRHI, int32 W, int32 H, EPixelFormat PF, int32 SlotIndex);

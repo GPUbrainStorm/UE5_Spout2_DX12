@@ -8,6 +8,8 @@
 #include "RenderCommandFence.h"
 #include "RHICommandList.h"
 #include "TextureResource.h"
+#include "Engine/World.h"
+#include "UObject/UnrealType.h"
 
 #if PLATFORM_WINDOWS
 #include "Windows/WindowsHWrapper.h"
@@ -87,11 +89,23 @@ static bool IsDXGISRGB(DXGI_FORMAT f) {
 		f == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 }
 
+namespace
+{
+	static bool IsReceiverEditorWorld(const UWorld* World)
+	{
+		return World &&
+			(World->WorldType == EWorldType::Editor ||
+			 World->WorldType == EWorldType::EditorPreview);
+	}
+}
+
 // Constructor / destructor.
 USpoutReceiverComponent::USpoutReceiverComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
-	PrimaryComponentTick.bStartWithTickEnabled = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
+	PrimaryComponentTick.TickInterval = 0.0f;
+	bTickInEditor = true;
 	ResetStats();
 }
 
@@ -101,26 +115,179 @@ USpoutReceiverComponent::~USpoutReceiverComponent()
 	ReleaseSpoutDevices();
 }
 
+bool USpoutReceiverComponent::IsEditorWorld() const
+{
+	return IsReceiverEditorWorld(GetWorld());
+}
+
+bool USpoutReceiverComponent::IsSupportedWorld() const
+{
+	const UWorld* World = GetWorld();
+	return World && (World->IsGameWorld() || IsReceiverEditorWorld(World));
+}
+
+bool USpoutReceiverComponent::IsD3D12Active() const
+{
+	return GDynamicRHI && FString(GDynamicRHI->GetName()) == TEXT("D3D12");
+}
+
+void USpoutReceiverComponent::RecomputeTargetInterval()
+{
+	if (TargetFPS > 0)
+	{
+		TargetFPS = FMath::Clamp(TargetFPS, 1, 240);
+		TargetInterval = 1.0f / static_cast<float>(TargetFPS);
+	}
+	else
+	{
+		TargetInterval = 0.0f;
+	}
+
+	TickAccumulator = 0.0f;
+}
+
+void USpoutReceiverComponent::RefreshEditorState()
+{
+#if PLATFORM_WINDOWS
+	if (!IsEditorWorld() || !IsSupportedWorld())
+	{
+		return;
+	}
+
+	StopReceivingInternal(false);
+	ReleaseSpoutDevices();
+	ResetStats();
+	RecomputeTargetInterval();
+
+	if (!IsD3D12Active())
+	{
+		UE_LOG(LogSpoutRX, Warning,
+			TEXT("SpoutReceiverComponent: D3D12 RHI is not active (current RHI: %s). Editor receiver is disabled."),
+			GDynamicRHI ? *FString(GDynamicRHI->GetName()) : TEXT("None"));
+		return;
+	}
+
+	InitSpoutDevices();
+
+	if (bWantsReceiving && OutputRenderTarget)
+	{
+		StartReceiving();
+	}
+#endif
+}
+
+void USpoutReceiverComponent::InitializeDesiredState()
+{
+	if (!bReceiveIntentInitialized)
+	{
+		bWantsReceiving = bAutoStart;
+		bReceiveIntentInitialized = true;
+	}
+}
+
+void USpoutReceiverComponent::OnRegister()
+{
+	Super::OnRegister();
+
+#if PLATFORM_WINDOWS
+	if (!IsSupportedWorld())
+	{
+		return;
+	}
+
+	InitializeDesiredState();
+
+	ResetStats();
+	RecomputeTargetInterval();
+
+	if (!IsEditorWorld())
+	{
+		return;
+	}
+
+	if (!IsD3D12Active())
+	{
+		return;
+	}
+
+	InitSpoutDevices();
+
+	if (bWantsReceiving && OutputRenderTarget)
+	{
+		StartReceiving();
+	}
+#endif
+}
+
+void USpoutReceiverComponent::OnUnregister()
+{
+#if PLATFORM_WINDOWS
+	StopReceivingInternal(false);
+	ReleaseSpoutDevices();
+#endif
+
+	Super::OnUnregister();
+}
+
+#if WITH_EDITOR
+void USpoutReceiverComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+#if PLATFORM_WINDOWS
+	const FName PropertyName = PropertyChangedEvent.GetPropertyName();
+
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(USpoutReceiverComponent, bAutoStart))
+	{
+		if (!bReceiving)
+		{
+			bWantsReceiving = bAutoStart;
+		}
+
+		bReceiveIntentInitialized = true;
+	}
+
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(USpoutReceiverComponent, bAutoStart) ||
+		PropertyName == GET_MEMBER_NAME_CHECKED(USpoutReceiverComponent, OutputRenderTarget) ||
+		PropertyName == GET_MEMBER_NAME_CHECKED(USpoutReceiverComponent, TargetFPS) ||
+		PropertyName == GET_MEMBER_NAME_CHECKED(USpoutReceiverComponent, SpoutSenderName) ||
+		PropertyName == GET_MEMBER_NAME_CHECKED(USpoutReceiverComponent, bUseDoubleBuffer))
+	{
+		RefreshEditorState();
+	}
+#endif
+}
+#endif
+
 // Set interval, init Spout, and auto-start if enabled.
 void USpoutReceiverComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (TargetFPS>0) {
-		TargetFPS = FMath::Clamp(TargetFPS, 1, 240);
-		TargetInterval = 1.0f / float(TargetFPS);
-	}
-	else {
-		TargetInterval = 0.f;
+	if (!IsSupportedWorld() || IsEditorWorld())
+	{
+		return;
 	}
 
+#if PLATFORM_WINDOWS
+	if (!IsD3D12Active())
+	{
+		UE_LOG(LogSpoutRX, Warning,
+			TEXT("SpoutReceiverComponent: D3D12 RHI is not active (current RHI: %s). Receiver is disabled."),
+			GDynamicRHI ? *FString(GDynamicRHI->GetName()) : TEXT("None"));
+		return;
+	}
+
+	InitializeDesiredState();
+	RecomputeTargetInterval();
 	InitSpoutDevices();
 	ResetStats();
 
-	if (bAutoStart)
+	if (bWantsReceiving && OutputRenderTarget)
 	{
 		StartReceiving();
 	}
+#endif
 }
 
 void USpoutReceiverComponent::ResetStats()
@@ -369,7 +536,7 @@ void USpoutReceiverComponent::PublishCompletedInternalBuffer()
 // Cleanup on end play.
 void USpoutReceiverComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	StopReceiving();
+	StopReceivingInternal(false);
 	ReleaseSpoutDevices();
 	Super::EndPlay(EndPlayReason);
 }
@@ -419,6 +586,30 @@ void USpoutReceiverComponent::TickComponent(float DeltaTime, enum ELevelTick Tic
 // Start receiving from Spout sender.
 void USpoutReceiverComponent::StartReceiving()
 {
+	if (!IsSupportedWorld())
+	{
+		return;
+	}
+
+#if PLATFORM_WINDOWS
+	bWantsReceiving = true;
+	bReceiveIntentInitialized = true;
+
+	if (!IsD3D12Active())
+	{
+		UE_LOG(LogSpoutRX, Warning,
+			TEXT("SpoutReceiverComponent: D3D12 RHI is not active (current RHI: %s). Receiver is disabled."),
+			GDynamicRHI ? *FString(GDynamicRHI->GetName()) : TEXT("None"));
+		return;
+	}
+#endif
+
+	if (!OutputRenderTarget)
+	{
+		UE_LOG(LogSpoutRX, Warning, TEXT("StartReceiving: OutputRenderTarget is null."));
+		return;
+	}
+
 	if (!SpoutDX12 && !InitSpoutDevices())
 	{
 		UE_LOG(LogSpoutRX, Error, TEXT("Failed to init Spout devices."));
@@ -452,14 +643,7 @@ void USpoutReceiverComponent::StartReceiving()
 		}
 	}
 
-	// Recompute interval from TargetFPS.
-	if (TargetFPS > 0) {
-		TargetFPS = FMath::Clamp(TargetFPS, 1, 240);
-		TargetInterval = 1.0f / float(TargetFPS);
-	}
-	else {
-		TargetInterval = 0.f;
-	}
+	RecomputeTargetInterval();
 
 	if (!bReceiving)
 	{
@@ -477,14 +661,26 @@ void USpoutReceiverComponent::StartReceiving()
 
 	// Mark receiver as running.
 	bReceiving = true;
+	SetComponentTickEnabled(true);
 	UE_LOG(LogSpoutRX, Display, TEXT("Spout receiver started @ %d FPS"), TargetFPS);
 }
 
 // Stop receiving from Spout sender.
 void USpoutReceiverComponent::StopReceiving()
 {
+	StopReceivingInternal(true);
+}
+
+void USpoutReceiverComponent::StopReceivingInternal(bool bClearDesiredState)
+{
 	// Mark receiver as stopped.
 	bReceiving = false;
+	SetComponentTickEnabled(false);
+	if (bClearDesiredState)
+	{
+		bWantsReceiving = false;
+		bReceiveIntentInitialized = true;
+	}
 	
 	// Release resources and close Spout devices.
 	for (int i = 0; i < 2; ++i)

@@ -10,6 +10,7 @@
 #include "RHICommandList.h"
 #include "TextureResource.h"
 #include "Logging/LogMacros.h"
+#include "UObject/UnrealType.h"
 
 #if PLATFORM_WINDOWS
 #include "Windows/WindowsHWrapper.h"
@@ -40,12 +41,140 @@ THIRD_PARTY_INCLUDES_START
 THIRD_PARTY_INCLUDES_END
 #endif
 
+namespace
+{
+    static bool IsSenderEditorWorld(const UWorld* World)
+    {
+        return World &&
+            (World->WorldType == EWorldType::Editor ||
+             World->WorldType == EWorldType::EditorPreview);
+    }
+}
 
 USpoutSenderComponent::USpoutSenderComponent()
 {
     PrimaryComponentTick.bCanEverTick = true;
     PrimaryComponentTick.bStartWithTickEnabled = false;
     PrimaryComponentTick.TickInterval = 0.0f;
+    bTickInEditor = true;
+}
+
+bool USpoutSenderComponent::IsEditorWorld() const
+{
+    return IsSenderEditorWorld(GetWorld());
+}
+
+bool USpoutSenderComponent::IsSupportedWorld() const
+{
+    const UWorld* World = GetWorld();
+    return World && (World->IsGameWorld() || IsSenderEditorWorld(World));
+}
+
+bool USpoutSenderComponent::IsD3D12Active() const
+{
+    return GDynamicRHI && FString(GDynamicRHI->GetName()) == TEXT("D3D12");
+}
+
+void USpoutSenderComponent::EnsureBridge()
+{
+#if PLATFORM_WINDOWS
+    if (!SpoutBridge)
+    {
+        SpoutBridge = new spoutDX12();
+        SpoutBridge->OpenDirectX12();
+    }
+#endif
+}
+
+void USpoutSenderComponent::ShutdownBridge()
+{
+#if PLATFORM_WINDOWS
+    FlushRenderingCommands();
+
+    if (SpoutBridge)
+    {
+        SpoutBridge->CloseDirectX12();
+        delete SpoutBridge;
+        SpoutBridge = nullptr;
+    }
+#endif
+}
+
+void USpoutSenderComponent::StopBroadcastInternal(bool bClearConfiguration, bool bClearDesiredState)
+{
+    bIsBroadcasting = false;
+    SetComponentTickEnabled(false);
+    SetComponentTickInterval(0.0f);
+    ClearTickPrerequisite();
+
+#if PLATFORM_WINDOWS
+    FlushRenderingCommands();
+
+    if (SpoutBridge)
+    {
+        SpoutBridge->ReleaseSender();
+        SpoutBridge->SetSenderName("");
+    }
+
+    ResetStageSlots();
+
+    if (bClearConfiguration)
+    {
+        CurrentRenderTarget = nullptr;
+        CurrentSenderName.Empty();
+        BroadcastFPS = 0;
+    }
+
+    if (bClearDesiredState)
+    {
+        bWantsBroadcasting = false;
+        bBroadcastIntentInitialized = true;
+    }
+
+    NextStageSlot = 0;
+#else
+    if (bClearDesiredState)
+    {
+        bWantsBroadcasting = false;
+    }
+#endif
+}
+
+void USpoutSenderComponent::RefreshEditorState()
+{
+#if PLATFORM_WINDOWS
+    if (!IsEditorWorld() || !IsSupportedWorld())
+    {
+        return;
+    }
+
+    StopBroadcastInternal(false, false);
+    ApplyTickPrerequisite();
+
+    if (!IsD3D12Active())
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("SpoutSenderComponent: D3D12 RHI is not active (current RHI: %s). Editor sender is disabled."),
+            GDynamicRHI ? *FString(GDynamicRHI->GetName()) : TEXT("None"));
+        return;
+    }
+
+    EnsureBridge();
+
+    if (bWantsBroadcasting && CurrentRenderTarget && !CurrentSenderName.IsEmpty())
+    {
+        StartBroadcast(CurrentRenderTarget, CurrentSenderName, BroadcastFPS);
+    }
+#endif
+}
+
+void USpoutSenderComponent::InitializeDesiredState()
+{
+    if (!bBroadcastIntentInitialized)
+    {
+        bWantsBroadcasting = Auto_Start;
+        bBroadcastIntentInitialized = true;
+    }
 }
 
 void USpoutSenderComponent::ClearTickPrerequisite()
@@ -82,7 +211,58 @@ void USpoutSenderComponent::SetTickAfterActor(AActor* NewTickAfterActor)
 
     TickAfterActor = NewTickAfterActor;
     ApplyTickPrerequisite();
+
+#if WITH_EDITOR
+    if (IsEditorWorld())
+    {
+        RefreshEditorState();
+    }
 #endif
+#endif
+}
+
+void USpoutSenderComponent::OnRegister()
+{
+    Super::OnRegister();
+
+#if PLATFORM_WINDOWS
+    if (!IsSupportedWorld())
+    {
+        return;
+    }
+
+    InitializeDesiredState();
+
+    if (!IsEditorWorld())
+    {
+        return;
+    }
+
+    ApplyTickPrerequisite();
+
+    if (!IsD3D12Active())
+    {
+        return;
+    }
+
+    EnsureBridge();
+
+    if (bWantsBroadcasting && CurrentRenderTarget && !CurrentSenderName.IsEmpty())
+    {
+        StartBroadcast(CurrentRenderTarget, CurrentSenderName, BroadcastFPS);
+    }
+#endif
+}
+
+void USpoutSenderComponent::OnUnregister()
+{
+#if PLATFORM_WINDOWS
+    StopBroadcastInternal(false, false);
+    ClearTickPrerequisite();
+    ShutdownBridge();
+#endif
+
+    Super::OnUnregister();
 }
 
 void USpoutSenderComponent::BeginPlay()
@@ -90,7 +270,12 @@ void USpoutSenderComponent::BeginPlay()
     Super::BeginPlay();
 
 #if PLATFORM_WINDOWS
-    if (!(GDynamicRHI && FString(GDynamicRHI->GetName()) == TEXT("D3D12")))
+    if (!IsSupportedWorld() || IsEditorWorld())
+    {
+        return;
+    }
+
+    if (!IsD3D12Active())
     {
         UE_LOG(LogTemp, Warning,
             TEXT("SpoutSenderComponent: D3D12 RHI is not active (current RHI: %s). Spout DX12 sender is disabled."),
@@ -98,16 +283,11 @@ void USpoutSenderComponent::BeginPlay()
         return;
     }
 
-    if (!SpoutBridge)
-    {
-        SpoutBridge = new spoutDX12();
-    }
-
-    SpoutBridge->OpenDirectX12();
-
+    InitializeDesiredState();
+    EnsureBridge();
     ApplyTickPrerequisite();
 
-    if (Auto_Start && CurrentRenderTarget && !CurrentSenderName.IsEmpty())
+    if (bWantsBroadcasting && CurrentRenderTarget && !CurrentSenderName.IsEmpty())
     {
         StartBroadcast(CurrentRenderTarget, CurrentSenderName, BroadcastFPS);
     }
@@ -130,22 +310,46 @@ void USpoutSenderComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 
 void USpoutSenderComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    StopBroadcast();
+    StopBroadcastInternal(false, false);
     ClearTickPrerequisite();
 
 #if PLATFORM_WINDOWS
-    FlushRenderingCommands();
-
-    if (SpoutBridge)
-    {
-        SpoutBridge->CloseDirectX12();
-        delete SpoutBridge;
-        SpoutBridge = nullptr;
-    }
+    ShutdownBridge();
 #endif
 
     Super::EndPlay(EndPlayReason);
 }
+
+#if WITH_EDITOR
+void USpoutSenderComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+    Super::PostEditChangeProperty(PropertyChangedEvent);
+
+#if PLATFORM_WINDOWS
+    const FName PropertyName = PropertyChangedEvent.GetPropertyName();
+
+    if (PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, Auto_Start))
+    {
+        if (!bIsBroadcasting)
+        {
+            bWantsBroadcasting = Auto_Start;
+        }
+
+        bBroadcastIntentInitialized = true;
+    }
+
+    if (PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, Auto_Start) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, CurrentSenderName) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, CurrentRenderTarget) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, BroadcastFPS) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, bUseDoubleBuffer) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, TickAfterActor))
+    {
+        RefreshEditorState();
+    }
+#endif
+}
+#endif
 
 void USpoutSenderComponent::QueueSendFrame_RenderThread(FTextureRHIRef SrcRHI, int32 W, int32 H, EPixelFormat PF, int32 SlotIndex)
 {
@@ -311,6 +515,24 @@ void USpoutSenderComponent::StartBroadcast(
     int32 FPS)
 {
 #if PLATFORM_WINDOWS
+    bWantsBroadcasting = true;
+    bBroadcastIntentInitialized = true;
+
+    if (!IsSupportedWorld())
+    {
+        return;
+    }
+
+    if (!IsD3D12Active())
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("SpoutSenderComponent: D3D12 RHI is not active (current RHI: %s). Spout DX12 sender is disabled."),
+            GDynamicRHI ? *FString(GDynamicRHI->GetName()) : TEXT("None"));
+        return;
+    }
+
+    EnsureBridge();
+
     if (!SpoutBridge || !RenderTarget || SenderName.IsEmpty())
     {
         return;
@@ -342,27 +564,7 @@ void USpoutSenderComponent::StartBroadcast(
 
 void USpoutSenderComponent::StopBroadcast()
 {
-    bIsBroadcasting = false;
-    SetComponentTickEnabled(false);
-    SetComponentTickInterval(0.0f);
-    ClearTickPrerequisite();
-
-#if PLATFORM_WINDOWS
-    FlushRenderingCommands();
-
-    if (SpoutBridge)
-    {
-        SpoutBridge->ReleaseSender();
-        SpoutBridge->SetSenderName("");
-    }
-
-    ResetStageSlots();
-
-    CurrentRenderTarget = nullptr;
-    CurrentSenderName.Empty();
-    BroadcastFPS = 0;
-    NextStageSlot = 0;
-#endif
+    StopBroadcastInternal(true, true);
 }
 
 void USpoutSenderComponent::ChangeRenderTarget(UTextureRenderTarget2D* NewRenderTarget)

@@ -19,6 +19,10 @@ class spoutDX;
 class spoutDX12;
 class FTextureRenderTargetResource;
 
+#if WITH_EDITOR
+struct FPropertyChangedEvent;
+#endif
+
 UCLASS(ClassGroup = (Spout), meta = (BlueprintSpawnableComponent))
 class USpoutReceiverComponent : public UActorComponent
 {
@@ -88,11 +92,25 @@ public:
 	int32 MissedFrames = 0;
 
 protected:
+    virtual void OnRegister() override;
+    virtual void OnUnregister() override;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
+#if WITH_EDITOR
+    virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
+
 private:
+    bool IsEditorWorld() const;
+    bool IsSupportedWorld() const;
+    bool IsD3D12Active() const;
+    void RecomputeTargetInterval();
+    void RefreshEditorState();
+    void InitializeDesiredState();
+    void StopReceivingInternal(bool bClearDesiredState);
+
 	// Spout objects
 	spoutDX* SpoutInfo = nullptr;
 	spoutDX12* SpoutDX12 = nullptr;
@@ -136,6 +154,8 @@ private:
 	// State flags
 	bool bReceiving = false;
 	bool bConnected = false;
+    bool bWantsReceiving = false;
+    bool bReceiveIntentInitialized = false;
 
 	// init and release functions
 	bool InitSpoutDevices();
