@@ -8,6 +8,12 @@
 #include "HAL/PlatformTime.h"
 #include "SpoutReceiverComponent.generated.h"
 
+#if PLATFORM_WINDOWS
+struct ID3D11Device5;
+struct ID3D11DeviceContext4;
+struct ID3D11Fence;
+#endif
+
 // Forward declare Spout classes
 class spoutDX;
 class spoutDX12;
@@ -93,9 +99,6 @@ private:
 	FTextureRenderTargetResource* CachedRTRes[2] = { nullptr, nullptr };
 	UTextureRenderTarget2D* CachedRTObject[2] = { nullptr, nullptr };
 	int32 InternalWriteIndex = 0;     // 0 or 1
-	int32 InternalReadyIndex = -1;    // -1 until first frame is written
-	bool  bSeededOutput = false;      // true after first successful publish to user RT
-	struct ID3D11DeviceContext3* CachedCtx11_3 = nullptr;
 
 	// stats internals
 	uint64 StatCopyCount = 0;
@@ -118,6 +121,14 @@ private:
 		uint32 Format = 87; // DXGI_FORMAT_B8G8R8A8_UNORM
 	} Incoming;
 
+	#if PLATFORM_WINDOWS
+		struct FCopyFenceSlotState
+		{
+			uint64 FenceValue = 0;
+			bool bPendingPublish = false;
+		};
+	#endif
+
 	// Time vars
 	float TickAccumulator = 0.f;
 	float TargetInterval = 1.0f / 60.0f;
@@ -138,6 +149,25 @@ private:
 	void ResetStats();
 	void UpdateStatsWindow();
 	bool CacheDX11Context3();
+
+	// fence sync for GPU work submission and completion tracking
+	bool CacheDX11FenceObjects();
+	void ReleaseFenceObjects();
+	bool SignalSubmittedWork(int32 TrackedSlotIndex);
+	void PublishCompletedInternalBuffer();
+
+	#if PLATFORM_WINDOWS
+		ID3D11Device5* CachedDev11_5 = nullptr;
+		ID3D11DeviceContext4* CachedCtx11_4 = nullptr;
+		ID3D11Fence* CopyFence11 = nullptr;
+
+		uint64 NextFenceValue = 1;
+		uint64 LastPublishedFenceValue = 0;
+
+		FCopyFenceSlotState SlotFenceState[2];
+	#endif
+
+	bool bPendingOneShotStop = false;
 
 	// DX11 and DX12 RHI devices
 	static struct ID3D12Device* GetUE_D3D12Device();

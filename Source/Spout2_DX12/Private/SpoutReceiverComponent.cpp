@@ -36,7 +36,7 @@ THIRD_PARTY_INCLUDES_START
 #define FALSE 0
 #endif
 
-#include <d3d11_3.h>
+#include <d3d11_4.h>
 
 #ifdef max
 #undef max
@@ -158,20 +158,212 @@ void USpoutReceiverComponent::UpdateStatsWindow()
 	}
 }
 
-bool USpoutReceiverComponent::CacheDX11Context3()
+bool USpoutReceiverComponent::CacheDX11FenceObjects()
 {
-	if (CachedCtx11_3)
+#if PLATFORM_WINDOWS
+	if (CachedDev11_5 && CachedCtx11_4 && CopyFence11)
+	{
 		return true;
+	}
 
 	if (!SpoutDX12)
+	{
 		return false;
+	}
 
+	ID3D11Device* Dev11 = SpoutDX12->GetD3D11device();
 	ID3D11DeviceContext* Ctx11 = SpoutDX12->GetD3D11context();
-	if (!Ctx11)
-		return false;
 
-	HRESULT hr = Ctx11->QueryInterface(__uuidof(ID3D11DeviceContext3), reinterpret_cast<void**>(&CachedCtx11_3));
-	return SUCCEEDED(hr) && CachedCtx11_3 != nullptr;
+	if (!Dev11 || !Ctx11)
+	{
+		return false;
+	}
+
+	if (!CachedDev11_5)
+	{
+		HRESULT hr = Dev11->QueryInterface(
+			__uuidof(ID3D11Device5),
+			reinterpret_cast<void**>(&CachedDev11_5));
+
+		if (FAILED(hr) || !CachedDev11_5)
+		{
+			UE_LOG(LogSpoutRX, Error, TEXT("QueryInterface(ID3D11Device5) failed. hr=0x%08X"), hr);
+			return false;
+		}
+	}
+
+	if (!CachedCtx11_4)
+	{
+		HRESULT hr = Ctx11->QueryInterface(
+			__uuidof(ID3D11DeviceContext4),
+			reinterpret_cast<void**>(&CachedCtx11_4));
+
+		if (FAILED(hr) || !CachedCtx11_4)
+		{
+			UE_LOG(LogSpoutRX, Error, TEXT("QueryInterface(ID3D11DeviceContext4) failed. hr=0x%08X"), hr);
+			return false;
+		}
+	}
+
+	if (!CopyFence11)
+	{
+		HRESULT hr = CachedDev11_5->CreateFence(
+			0,
+			D3D11_FENCE_FLAG_NONE,
+			__uuidof(ID3D11Fence),
+			reinterpret_cast<void**>(&CopyFence11));
+
+		if (FAILED(hr) || !CopyFence11)
+		{
+			UE_LOG(LogSpoutRX, Error, TEXT("CreateFence failed. hr=0x%08X"), hr);
+			return false;
+		}
+	}
+
+	return true;
+#else
+	return false;
+#endif
+}
+
+void USpoutReceiverComponent::ReleaseFenceObjects()
+{
+#if PLATFORM_WINDOWS
+	if (CopyFence11)
+	{
+		CopyFence11->Release();
+		CopyFence11 = nullptr;
+	}
+
+	if (CachedCtx11_4)
+	{
+		CachedCtx11_4->Release();
+		CachedCtx11_4 = nullptr;
+	}
+
+	if (CachedDev11_5)
+	{
+		CachedDev11_5->Release();
+		CachedDev11_5 = nullptr;
+	}
+
+	NextFenceValue = 1;
+	LastPublishedFenceValue = 0;
+
+	for (int32 i = 0; i < 2; ++i)
+	{
+		SlotFenceState[i].FenceValue = 0;
+		SlotFenceState[i].bPendingPublish = false;
+	}
+#endif
+}
+
+bool USpoutReceiverComponent::SignalSubmittedWork(int32 TrackedSlotIndex)
+{
+#if PLATFORM_WINDOWS
+	if (!CacheDX11FenceObjects())
+	{
+		return false;
+	}
+
+	const uint64 FenceValue = NextFenceValue++;
+
+	HRESULT hr = CachedCtx11_4->Signal(CopyFence11, FenceValue);
+	if (FAILED(hr))
+	{
+		UE_LOG(LogSpoutRX, Error, TEXT("ID3D11DeviceContext4::Signal failed. hr=0x%08X"), hr);
+		return false;
+	}
+
+	if (TrackedSlotIndex == 0 || TrackedSlotIndex == 1)
+	{
+		SlotFenceState[TrackedSlotIndex].FenceValue = FenceValue;
+		SlotFenceState[TrackedSlotIndex].bPendingPublish = true;
+	}
+
+	return true;
+#else
+	return false;
+#endif
+}
+
+void USpoutReceiverComponent::PublishCompletedInternalBuffer()
+{
+#if PLATFORM_WINDOWS
+	if (!bUseDoubleBuffer || !OutputRenderTarget || !CopyFence11)
+	{
+		return;
+	}
+
+	const uint64 CompletedValue = CopyFence11->GetCompletedValue();
+
+	int32 BestIndex = INDEX_NONE;
+	uint64 BestFenceValue = LastPublishedFenceValue;
+
+	for (int32 i = 0; i < 2; ++i)
+	{
+		if (SlotFenceState[i].bPendingPublish &&
+			SlotFenceState[i].FenceValue > LastPublishedFenceValue &&
+			SlotFenceState[i].FenceValue <= CompletedValue)
+		{
+			if (BestIndex == INDEX_NONE || SlotFenceState[i].FenceValue > BestFenceValue)
+			{
+				BestIndex = i;
+				BestFenceValue = SlotFenceState[i].FenceValue;
+			}
+		}
+	}
+
+	if (BestIndex == INDEX_NONE)
+	{
+		return;
+	}
+
+	UTextureRenderTarget2D* ReadyRT = (BestIndex == 0) ? InternalRT_A : InternalRT_B;
+	if (!ReadyRT)
+	{
+		return;
+	}
+
+	FTextureRenderTargetResource* SrcRes = ReadyRT->GameThread_GetRenderTargetResource();
+	FTextureRenderTargetResource* DstRes = OutputRenderTarget->GameThread_GetRenderTargetResource();
+
+	if (!SrcRes || !DstRes)
+	{
+		return;
+	}
+
+	ENQUEUE_RENDER_COMMAND(SpoutCopyInternalToUserRT)(
+		[SrcRes, DstRes](FRHICommandListImmediate& RHICmdList)
+		{
+			FRHITexture* SrcTex = SrcRes->GetRenderTargetTexture();
+			FRHITexture* DstTex = DstRes->GetRenderTargetTexture();
+
+			if (SrcTex && DstTex)
+			{
+				FRHICopyTextureInfo Info;
+				RHICmdList.CopyTexture(SrcTex, DstTex, Info);
+			}
+		});
+
+	LastPublishedFenceValue = BestFenceValue;
+
+	for (int32 i = 0; i < 2; ++i)
+	{
+		if (SlotFenceState[i].bPendingPublish &&
+			SlotFenceState[i].FenceValue <= BestFenceValue)
+		{
+			SlotFenceState[i].bPendingPublish = false;
+		}
+	}
+
+	// One-shot mode: stop only after the completed frame has been published.
+	if (bPendingOneShotStop)
+	{
+		bPendingOneShotStop = false;
+		StopReceiving();
+	}
+#endif
 }
 
 // Cleanup on end play.
@@ -190,10 +382,22 @@ void USpoutReceiverComponent::TickComponent(float DeltaTime, enum ELevelTick Tic
 	if (!bReceiving)
 		return;
 
+	// Poll fence completion every tick and publish completed internal buffer if ready.
+	PublishCompletedInternalBuffer();
+
 	if (TargetInterval <= 0.f)
 	{
-		// "Receive once then stop" mode relies on ReceiveOnce() calling StopReceiving()
-		ReceiveOnce();
+		// One-shot mode:
+		// submit one frame, then stop only after PublishCompletedInternalBuffer() sees it complete.
+		if (!bPendingOneShotStop)
+		{
+			if (ReceiveOnce())
+			{
+				bPendingOneShotStop = true;
+			}
+		}
+
+		UpdateStatsWindow();
 		return;
 	}
 
@@ -201,12 +405,15 @@ void USpoutReceiverComponent::TickComponent(float DeltaTime, enum ELevelTick Tic
 	if (TickAccumulator < TargetInterval)
 		return;
 
-	// keep remainder to reduce jitter
+	// Keep remainder to reduce jitter.
 	TickAccumulator -= TargetInterval;
 
 	ReceiveOnce();
-	UpdateStatsWindow();
 
+	// Poll again in case the previous slot completed by now.
+	PublishCompletedInternalBuffer();
+
+	UpdateStatsWindow();
 }
 
 // Start receiving from Spout sender.
@@ -224,7 +431,11 @@ void USpoutReceiverComponent::StartReceiving()
 		return;
 	}
 
-	CacheDX11Context3();
+	if (!CacheDX11FenceObjects())
+	{
+		UE_LOG(LogSpoutRX, Error, TEXT("Failed to initialize D3D11 fence objects."));
+		return;
+	}
 
 	// Use selected sender name, or active sender if empty.
 	if (!SpoutSenderName.IsEmpty())
@@ -255,6 +466,15 @@ void USpoutReceiverComponent::StartReceiving()
 		++ReconnectCount;
 	}
 
+	bPendingOneShotStop = false;
+	LastPublishedFenceValue = 0;
+
+	for (int32 i = 0; i < 2; ++i)
+	{
+		SlotFenceState[i].FenceValue = 0;
+		SlotFenceState[i].bPendingPublish = false;
+	}
+
 	// Mark receiver as running.
 	bReceiving = true;
 	UE_LOG(LogSpoutRX, Display, TEXT("Spout receiver started @ %d FPS"), TargetFPS);
@@ -279,8 +499,7 @@ void USpoutReceiverComponent::StopReceiving()
 	}
 
 	InternalWriteIndex = 0;
-	InternalReadyIndex = -1;
-	bSeededOutput = false;
+	bPendingOneShotStop = false;
 
 	if (Incoming.GPUCopy11)
 	{
@@ -301,11 +520,7 @@ void USpoutReceiverComponent::StopReceiving()
 		SpoutDX12->CloseDirectX12();
 	}
 
-	if (CachedCtx11_3)
-	{
-		CachedCtx11_3->Release();
-		CachedCtx11_3 = nullptr;
-	}
+	ReleaseFenceObjects();
 
 	bConnected = false;
 }
@@ -404,8 +619,7 @@ void USpoutReceiverComponent::ReleaseSpoutDevices()
 	}
 
 	InternalWriteIndex = 0;
-	InternalReadyIndex = -1;
-	bSeededOutput = false;
+	bPendingOneShotStop = false;
 
 	if (Incoming.CachedSrc11)
 	{
@@ -422,11 +636,7 @@ void USpoutReceiverComponent::ReleaseSpoutDevices()
 
 	Incoming = FIncoming{};
 
-	if (CachedCtx11_3)
-	{
-		CachedCtx11_3->Release();
-		CachedCtx11_3 = nullptr;
-	}
+	ReleaseFenceObjects();
 
 	if (SpoutDX12)
 	{
@@ -454,8 +664,6 @@ bool USpoutReceiverComponent::ReceiveOnce()
 	}
 
 	UE_LOG(LogSpoutRX, Verbose, TEXT("ReceiveOnce: begin"));
-	bool bDidCopyThisFrame = false;
-	bool bDidFlushThisFrame = false;
 
 	// Read sender info from Spout.
 	unsigned int SW = 0, SH = 0; HANDLE Share = nullptr; DWORD Fmt = 0;
@@ -581,7 +789,7 @@ bool USpoutReceiverComponent::ReceiveOnce()
 		reinterpret_cast<ID3D11Resource*>(Incoming.GPUCopy11),
 		reinterpret_cast<ID3D11Resource*>(Src11)
 	);
-	bDidCopyThisFrame = true;
+
 	++StatCopyCount;
 
 	// Always keep user output RT valid (stable object)
@@ -630,70 +838,29 @@ bool USpoutReceiverComponent::ReceiveOnce()
 
 	D3D11On12->ReleaseWrappedResources(ToAcquire, 1);
 
-	// Keep flush in legacy single-buffer mode (current working behavior).
-	// Submit D3D11on12 work every frame.
-	if (bDidCopyThisFrame)
+	// Fence-based submit:
+	// signal after ReleaseWrappedResources so the fence represents completed D3D11On12 submission order.
+	const int32 TrackedSlotIndex = bUseDoubleBuffer ? WriteIdx : INDEX_NONE;
+
+	if (!SignalSubmittedWork(TrackedSlotIndex))
 	{
-		if (CachedCtx11_3 || CacheDX11Context3())
-		{
-			CachedCtx11_3->Flush1(D3D11_CONTEXT_TYPE_ALL, nullptr);
-			++StatFlush1Count;
-		}
-		else
-		{
-			Ctx11->Flush();
-			bDidFlushThisFrame = true;
-			++StatFlushCount;
-		}
-		UE_LOG(LogSpoutRX, Verbose, TEXT("Copy submitted + Flush"));
+		UE_LOG(LogSpoutRX, Error, TEXT("Failed to signal D3D11 fence after copy."));
+		++StatMissedFramesAccum;
+		return false;
 	}
-	// Mark as connected.
+
+	// No per-frame Flush / Flush1 here.
+	// Double-buffer publish is handled later by PublishCompletedInternalBuffer()
+	// only after the fence completes.
+
 	bConnected = true;
+
 	if (bUseDoubleBuffer)
 	{
-		// Publish the previously completed internal buffer into the user RT (stable object).
-		// First frame: seed output once using a flush to avoid initial blank.
-		if (InternalReadyIndex < 0)
-		{
-			// Seed: force completion once, then publish the just-written buffer.
-			Ctx11->Flush();
-			InternalReadyIndex = WriteIdx;
-			bSeededOutput = true;
-		}
-		else
-		{
-			// Normal: display previous completed buffer (avoids black frames without per-frame flush)
-			UTextureRenderTarget2D* ReadyRT = (InternalReadyIndex == 0) ? InternalRT_A : InternalRT_B;
-
-			FTextureRenderTargetResource* SrcRes = ReadyRT->GameThread_GetRenderTargetResource();
-			FTextureRenderTargetResource* DstRes = OutputRenderTarget->GameThread_GetRenderTargetResource();
-
-			if (SrcRes && DstRes)
-			{
-				ENQUEUE_RENDER_COMMAND(SpoutCopyInternalToUserRT)(
-					[SrcRes, DstRes](FRHICommandListImmediate& RHICmdList)
-					{
-						FRHITexture* SrcTex = SrcRes->GetRenderTargetTexture();
-						FRHITexture* DstTex = DstRes->GetRenderTargetTexture();
-						if (SrcTex && DstTex)
-						{
-							FRHICopyTextureInfo Info;
-							RHICmdList.CopyTexture(SrcTex, DstTex, Info);
-						}
-					});
-			}
-
-			InternalReadyIndex = WriteIdx;
-		}
-
 		InternalWriteIndex = 1 - WriteIdx;
 	}
-	UE_LOG(LogSpoutRX, Verbose, TEXT("ReceiveOnce!"));
 
-	// If TargetFPS <= 0, receive one frame then stop.
-	if (TargetFPS <= 0) {
-		StopReceiving();
-	}
+	UE_LOG(LogSpoutRX, Verbose, TEXT("ReceiveOnce!"));
 	return true;
 }
 
