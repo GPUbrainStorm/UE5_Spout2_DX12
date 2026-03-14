@@ -1,6 +1,8 @@
 #include "SpoutSenderComponent.h"
 
 #include "Engine/World.h"
+#include "Engine/Engine.h"
+#include "Engine/GameViewportClient.h"
 #include "GameFramework/Actor.h"
 #include "Engine/TextureRenderTarget.h"
 #include "Engine/TextureRenderTarget2D.h"
@@ -112,15 +114,30 @@ bool USpoutSenderComponent::IsD3D12Active() const
 bool USpoutSenderComponent::IsUsingEditorViewportSource() const
 {
 #if WITH_EDITOR
-    return bUseEditorViewportSource && (IsEditorWorld() || IsPreviewWorld());
+    return SourceType == ESpoutSenderSourceType::EditorViewport && (IsEditorWorld() || IsPreviewWorld());
 #else
     return false;
 #endif
 }
 
+bool USpoutSenderComponent::IsUsingGameViewportSource() const
+{
+    return SourceType == ESpoutSenderSourceType::GameViewport;
+}
+
 bool USpoutSenderComponent::HasValidConfiguredSource() const
 {
-    return IsUsingEditorViewportSource() || CurrentRenderTarget != nullptr;
+    switch (SourceType)
+    {
+    case ESpoutSenderSourceType::RenderTarget:
+        return CurrentRenderTarget != nullptr;
+    case ESpoutSenderSourceType::GameViewport:
+        return true;
+    case ESpoutSenderSourceType::EditorViewport:
+        return IsUsingEditorViewportSource();
+    default:
+        return false;
+    }
 }
 
 bool USpoutSenderComponent::ResolveCurrentSource(
@@ -167,6 +184,38 @@ bool USpoutSenderComponent::ResolveCurrentSource(
         return true;
     }
 #endif
+
+    if (IsUsingGameViewportSource())
+    {
+        if (!GEngine || !GEngine->GameViewport)
+        {
+            return false;
+        }
+
+        FViewport* GameViewport = GEngine->GameViewport->Viewport;
+        if (!GameViewport)
+        {
+            return false;
+        }
+
+        FTexture2DRHIRef ViewportTexture = GameViewport->GetRenderTargetTexture();
+        if (!ViewportTexture.IsValid())
+        {
+            return false;
+        }
+
+        const FIntPoint Size = GameViewport->GetSizeXY();
+        if (Size.X <= 0 || Size.Y <= 0)
+        {
+            return false;
+        }
+
+        OutTexture = ViewportTexture;
+        OutWidth = Size.X;
+        OutHeight = Size.Y;
+        OutFormat = ViewportTexture->GetFormat();
+        return true;
+    }
 
     if (!CurrentRenderTarget)
     {
@@ -517,7 +566,7 @@ void USpoutSenderComponent::PostEditChangeProperty(FPropertyChangedEvent& Proper
         PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, CurrentRenderTarget) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, BroadcastFPS) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, bUseDoubleBuffer) ||
-        PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, bUseEditorViewportSource) ||
+        PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, SourceType) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, StartupPolicy) ||
         PropertyName == GET_MEMBER_NAME_CHECKED(USpoutSenderComponent, TickAfterActor))
     {
@@ -708,7 +757,7 @@ void USpoutSenderComponent::StartBroadcast(
         return;
     }
 
-    if (!bUseEditorViewportSource && !RenderTarget)
+    if (SourceType == ESpoutSenderSourceType::RenderTarget && !RenderTarget)
     {
         return;
     }
@@ -718,7 +767,7 @@ void USpoutSenderComponent::StartBroadcast(
         return;
     }
 
-    CurrentRenderTarget = bUseEditorViewportSource ? nullptr : RenderTarget;
+    CurrentRenderTarget = (SourceType == ESpoutSenderSourceType::RenderTarget) ? RenderTarget : nullptr;
     CurrentSenderName = SenderName;
     BroadcastFPS = FPS;
     bIsBroadcasting = true;

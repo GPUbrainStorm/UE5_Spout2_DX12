@@ -5,6 +5,7 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "RHIResources.h"
 #include "RenderCommandFence.h"
+#include "SpoutSenderSource.h"
 #include "SpoutWorldPolicy.h"
 #include "SpoutSenderComponent.generated.h"
 
@@ -47,8 +48,8 @@ public:
     int32 BroadcastFPS = 60;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
     bool bUseDoubleBuffer = false;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout", meta = (DisplayName = "Use Editor Viewport Source"))
-    bool bUseEditorViewportSource = false;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
+    ESpoutSenderSourceType SourceType = ESpoutSenderSourceType::RenderTarget;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
     ESpoutWorldBootstrapPolicy StartupPolicy = ESpoutWorldBootstrapPolicy::EditorAndGame;
     UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Spout")
@@ -84,6 +85,7 @@ private:
     bool IsSupportedWorld() const;
     bool IsD3D12Active() const;
     bool IsUsingEditorViewportSource() const;
+    bool IsUsingGameViewportSource() const;
     bool HasValidConfiguredSource() const;
     bool ResolveCurrentSource(FTextureRHIRef& OutTexture, int32& OutWidth, int32& OutHeight, EPixelFormat& OutFormat) const;
 
