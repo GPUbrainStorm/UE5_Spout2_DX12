@@ -48,7 +48,7 @@ Tested on Windows with DX12:
 2. Extract it into:
 
 ```text
-YourProject/Plugins/Spout2_DX12/
+YourProject/Plugins/
 ```
 
 3. Open the project
@@ -216,15 +216,6 @@ Package the project normally. The plugin stages the required DLLs next to the pa
 2. Assign `OutputRenderTarget`
 3. Set `SpoutSenderName` if needed
 4. Enable `bAutoStart` or call `StartReceiving()`
-
----
-
-## Notes
-
-- Sender and receiver are DX12 only.
-- The plugin handles Windows header issues needed for packaging.
-- UE 5.6 deprecated the old `FTexture2DRHIRef` type and UE 5.7 removed it. The plugin now uses the unified texture type for those versions.
-- Sender editor ownership and restart behavior were updated to better handle editor, game, and preview transitions.
 
 ---
 
