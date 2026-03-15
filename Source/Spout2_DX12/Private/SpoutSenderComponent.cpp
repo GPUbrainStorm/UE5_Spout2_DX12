@@ -341,7 +341,7 @@ void USpoutSenderComponent::RefreshEditorState()
 
     if (bWantsBroadcasting && HasValidConfiguredSource() && !CurrentSenderName.IsEmpty())
     {
-        StartBroadcast(CurrentRenderTarget, CurrentSenderName, BroadcastFPS);
+        StartBroadcastConfigured(CurrentRenderTarget, CurrentSenderName, BroadcastFPS);
     }
 #endif
 }
@@ -499,7 +499,7 @@ void USpoutSenderComponent::OnRegister()
 
     if (bWantsBroadcasting && HasValidConfiguredSource() && !CurrentSenderName.IsEmpty())
     {
-        StartBroadcast(CurrentRenderTarget, CurrentSenderName, BroadcastFPS);
+        StartBroadcastConfigured(CurrentRenderTarget, CurrentSenderName, BroadcastFPS);
     }
 #endif
 }
@@ -539,7 +539,7 @@ void USpoutSenderComponent::BeginPlay()
 
     if (bWantsBroadcasting && HasValidConfiguredSource() && !CurrentSenderName.IsEmpty())
     {
-        StartBroadcast(CurrentRenderTarget, CurrentSenderName, BroadcastFPS);
+        StartBroadcastConfigured(CurrentRenderTarget, CurrentSenderName, BroadcastFPS);
     }
 #endif
 }
@@ -755,7 +755,7 @@ void USpoutSenderComponent::UpdateTexture()
 #endif
 }
 
-void USpoutSenderComponent::StartBroadcast(
+void USpoutSenderComponent::StartBroadcastConfigured(
     UTextureRenderTarget2D* RenderTarget,
     const FString& SenderName,
     int32 FPS)
@@ -763,6 +763,11 @@ void USpoutSenderComponent::StartBroadcast(
 #if PLATFORM_WINDOWS
     bWantsBroadcasting = true;
     bBroadcastIntentInitialized = true;
+
+    if (bIsBroadcasting)
+    {
+        StopBroadcastInternal(false, false);
+    }
 
     if (!IsSupportedWorld())
     {
@@ -815,6 +820,42 @@ void USpoutSenderComponent::StartBroadcast(
     SetComponentTickEnabled(true);
 
     UpdateTexture();
+#endif
+}
+
+void USpoutSenderComponent::StartBroadcastFromRenderTarget(
+    UTextureRenderTarget2D* RenderTarget,
+    const FString& SenderName,
+    int32 FPS,
+    bool bEnableDoubleBuffer)
+{
+#if PLATFORM_WINDOWS
+    SourceType = ESpoutSenderSourceType::RenderTarget;
+    bUseDoubleBuffer = bEnableDoubleBuffer;
+    StartupPolicy = ESpoutWorldBootstrapPolicy::GameOnly;
+
+    StartBroadcastConfigured(RenderTarget, SenderName, FPS);
+#endif
+}
+
+void USpoutSenderComponent::StartBroadcastGameViewport(
+    const FString& SenderName,
+    int32 FPS,
+    bool bEnableDoubleBuffer)
+{
+#if PLATFORM_WINDOWS
+    SourceType = ESpoutSenderSourceType::GameViewport;
+    bUseDoubleBuffer = bEnableDoubleBuffer;
+    StartupPolicy = ESpoutWorldBootstrapPolicy::GameOnly;
+
+    StartBroadcastConfigured(nullptr, SenderName, FPS);
+#endif
+}
+
+void USpoutSenderComponent::StartBroadcast()
+{
+#if PLATFORM_WINDOWS
+    StartBroadcastConfigured(CurrentRenderTarget, CurrentSenderName, BroadcastFPS);
 #endif
 }
 

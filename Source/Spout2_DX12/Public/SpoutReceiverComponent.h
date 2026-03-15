@@ -35,19 +35,19 @@ public:
 
 
 	// Auto Start receiving on BeginPlay
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout Receiver")
-	bool bAutoStart = true;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout Receiver", meta = (ToolTip = "If enabled, the receiver starts automatically when the component becomes active in a supported world."))
+	bool bAutoStart = false;
 
 	// Output render target
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout Receiver")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout Receiver", meta = (ToolTip = "The render target that received frames are copied into for use by materials, UI, or gameplay logic."))
 	TObjectPtr<UTextureRenderTarget2D> OutputRenderTarget;
 
 	// Target FPS for receiving (0 = receive once then stop)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout Receiver")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout Receiver", meta = (ToolTip = "How often the receiver pulls frames from Spout. Set to 0 to receive one frame and stop automatically."))
 	int32 TargetFPS = 60;
 
 	// Specific sender name to connect to (empty = first available)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout Receiver")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout Receiver", meta = (ToolTip = "The specific Spout sender name to connect to. Leave empty to connect to the first available sender."))
 	FString SpoutSenderName;
 
 	// Manually start the receiver
@@ -67,10 +67,10 @@ public:
 	bool IsConnected() const { return bConnected; }
 
 	// Keep OutputRenderTarget stable for users; use internal buffers for receiving.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout Receiver")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout Receiver", meta = (ToolTip = "Uses internal double buffering so the output render target stays stable while new frames are copied in. This can improve smoothness at the cost of memory and latency."))
 	bool bUseDoubleBuffer = false;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout Receiver")
-	ESpoutWorldBootstrapPolicy StartupPolicy = ESpoutWorldBootstrapPolicy::EditorAndGame;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout Receiver", meta = (ToolTip = "Controls which world types are allowed to auto-start or editor-start this receiver component."))
+	ESpoutWorldBootstrapPolicy StartupPolicy = ESpoutWorldBootstrapPolicy::GameOnly;
 
 	// Internal render targets for receiving and copying (when using stable user RT option).
 	UPROPERTY(Transient)
@@ -79,19 +79,19 @@ public:
 	TObjectPtr<UTextureRenderTarget2D> InternalRT_B;
 
 	// Debug / runtime stats
-	UPROPERTY(BlueprintReadOnly, Category = "Spout Receiver|Stats")
+	UPROPERTY(BlueprintReadOnly, Category = "Spout Receiver|Stats", meta = (ToolTip = "Average number of copy operations completed per second over the current stats window."))
 	float CopiesPerSecond = 0.0f;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Spout Receiver|Stats")
+	UPROPERTY(BlueprintReadOnly, Category = "Spout Receiver|Stats", meta = (ToolTip = "Average number of first-stage flush operations per second over the current stats window."))
 	float Flush1PerSecond = 0.0f;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Spout Receiver|Stats")
+	UPROPERTY(BlueprintReadOnly, Category = "Spout Receiver|Stats", meta = (ToolTip = "Average number of flush operations per second over the current stats window."))
 	float FlushPerSecond = 0.0f;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Spout Receiver|Stats")
+	UPROPERTY(BlueprintReadOnly, Category = "Spout Receiver|Stats", meta = (ToolTip = "How many times the receiver had to reconnect to the sender during this session."))
 	int32 ReconnectCount = 0;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Spout Receiver|Stats")
+	UPROPERTY(BlueprintReadOnly, Category = "Spout Receiver|Stats", meta = (ToolTip = "How many frames were missed while receiving during this session."))
 	int32 MissedFrames = 0;
 
 protected:

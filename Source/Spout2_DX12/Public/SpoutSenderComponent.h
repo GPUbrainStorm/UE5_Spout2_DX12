@@ -30,7 +30,20 @@ public:
 	void UpdateTexture();
 
     UFUNCTION(BlueprintCallable, Category = "Spout")
-    void StartBroadcast(UTextureRenderTarget2D* RenderTarget, const FString& SenderName = "Sender Component", int32 FPS = 60);
+    void StartBroadcastFromRenderTarget(
+        UTextureRenderTarget2D* RenderTarget,
+        const FString& SenderName = "Sender Component",
+        int32 FPS = 60,
+        bool bEnableDoubleBuffer = false);
+
+    UFUNCTION(BlueprintCallable, Category = "Spout")
+    void StartBroadcastGameViewport(
+        const FString& SenderName = "Sender Component",
+        int32 FPS = 60,
+        bool bEnableDoubleBuffer = false);
+
+    UFUNCTION(BlueprintCallable, Category = "Spout")
+    void StartBroadcast();
 
     UFUNCTION(BlueprintCallable, Category = "Spout")
     void StopBroadcast();
@@ -38,21 +51,21 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Spout")
     void ChangeRenderTarget(UTextureRenderTarget2D* NewRenderTarget);
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
-    bool Auto_Start = true;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout", meta = (ToolTip = "If enabled, the sender starts automatically when the component becomes active in a supported world."))
+    bool Auto_Start = false;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout", meta = (ToolTip = "The published Spout sender name. Receivers use this name to find and connect to this sender."))
     FString CurrentSenderName = "Broadcast Component";
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout", meta = (ToolTip = "Selects which Unreal source this component sends to Spout: a render target, the game viewport, or the editor viewport."))
     ESpoutSenderSourceType SourceType = ESpoutSenderSourceType::RenderTarget;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout", meta = (EditCondition = "SourceType == ESpoutSenderSourceType::RenderTarget", EditConditionHides))
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout", meta = (EditCondition = "SourceType == ESpoutSenderSourceType::RenderTarget", EditConditionHides, ToolTip = "The render target to send when Source Type is set to Render Target."))
     UTextureRenderTarget2D* CurrentRenderTarget = nullptr;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout", meta = (ToolTip = "How often the sender pushes frames. Set to 0 to disable throttling and tick every frame."))
     int32 BroadcastFPS = 60;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout", meta = (ToolTip = "Uses two staging buffers instead of one. This can improve frame pacing at the cost of more GPU memory and latency."))
     bool bUseDoubleBuffer = false;
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout")
-    ESpoutWorldBootstrapPolicy StartupPolicy = ESpoutWorldBootstrapPolicy::EditorAndGame;
-    UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Spout")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spout", meta = (ToolTip = "Controls which world types are allowed to auto-start or editor-start this sender component. Runtime Blueprint start helpers can override this internally."))
+    ESpoutWorldBootstrapPolicy StartupPolicy = ESpoutWorldBootstrapPolicy::GameOnly;
+    UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "Spout", meta = (ToolTip = "Optional actor that this component should tick after. Use this when the source texture is updated by another actor earlier in the frame."))
     TObjectPtr<AActor> TickAfterActor = nullptr;
 
     UFUNCTION(BlueprintCallable, Category = "Spout")
@@ -93,6 +106,7 @@ private:
     void ShutdownBridge();
     void RefreshEditorState();
     void StopBroadcastInternal(bool bClearConfiguration, bool bClearDesiredState);
+    void StartBroadcastConfigured(UTextureRenderTarget2D* RenderTarget, const FString& SenderName, int32 FPS);
     void InitializeDesiredState();
     bool AcquireEditorOwnership(const FString& SenderName);
     void ReleaseEditorOwnership();
