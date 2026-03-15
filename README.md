@@ -123,7 +123,13 @@ Package the project normally. The plugin stages the required DLLs next to the pa
 - `StartBroadcast()` uses the same configured settings path that auto-start uses.
 - The runtime override functions are intended for manual runtime control.
 
-### Sender Screenshot
+### Sender Screenshots
+
+![Sender Functions And Settings](SpoutSS/SenderFunctionsAndSettings.png)
+
+![Sender Test In UE](SpoutSS/SenderTestSS_UE.png)
+
+![Sender Test In OBS](SpoutSS/SenderTestSS_OBS.png)
 
 ---
 
@@ -171,6 +177,10 @@ Package the project normally. The plugin stages the required DLLs next to the pa
   Number of missed frames during the current session.
 
 ### Receiver Screenshots
+
+![Receiver Functions And Settings](SpoutSS/ReceiverFunctionsAndSettings.png)
+
+![Receiver Test](SpoutSS/ReceiverTestSS.png)
 
 
 ---
