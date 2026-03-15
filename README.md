@@ -178,6 +178,8 @@ Package the project normally. The plugin stages the required DLLs next to the pa
 
 ### Receiver Screenshots
 
+![Receiver Functions And Settings](SpoutSS/ReceiverFunctionsAndSettings.png)
+
 ![Receiver Test](SpoutSS/ReceiverTestSS.png)
 
 
