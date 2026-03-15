@@ -13,14 +13,14 @@
 #include "TextureResource.h"
 
 #if PLATFORM_WINDOWS
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include "Windows/WindowsHWrapper.h"
 
 THIRD_PARTY_INCLUDES_START
 #include "Windows/AllowWindowsPlatformTypes.h"
-
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
 
 #include <d3d11.h>
 #include <d3d12.h>
@@ -35,6 +35,9 @@ THIRD_PARTY_INCLUDES_START
 #endif
 #ifdef min
 #undef min
+#endif
+#ifdef IsMinimized
+#undef IsMinimized
 #endif
 
 #include "Windows/HideWindowsPlatformTypes.h"

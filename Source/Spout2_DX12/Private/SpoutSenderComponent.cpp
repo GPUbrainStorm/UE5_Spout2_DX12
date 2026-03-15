@@ -21,14 +21,14 @@
 #endif
 
 #if PLATFORM_WINDOWS
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include "Windows/WindowsHWrapper.h"
 
 THIRD_PARTY_INCLUDES_START
 #include "Windows/AllowWindowsPlatformTypes.h"
-
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
 
 #include <d3d11.h>
 #include <d3d12.h>
@@ -43,6 +43,9 @@ THIRD_PARTY_INCLUDES_START
 #endif
 #ifdef min
 #undef min
+#endif
+#ifdef IsMinimized
+#undef IsMinimized
 #endif
 
 #include "Windows/HideWindowsPlatformTypes.h"
@@ -165,7 +168,7 @@ bool USpoutSenderComponent::ResolveCurrentSource(
             return false;
         }
 
-        FTexture2DRHIRef ViewportTexture = ActiveViewport->GetRenderTargetTexture();
+        FTextureRHIRef ViewportTexture = ActiveViewport->GetRenderTargetTexture();
         if (!ViewportTexture.IsValid())
         {
             return false;
@@ -198,7 +201,7 @@ bool USpoutSenderComponent::ResolveCurrentSource(
             return false;
         }
 
-        FTexture2DRHIRef ViewportTexture = GameViewport->GetRenderTargetTexture();
+        FTextureRHIRef ViewportTexture = GameViewport->GetRenderTargetTexture();
         if (!ViewportTexture.IsValid())
         {
             return false;
@@ -310,12 +313,19 @@ void USpoutSenderComponent::StopBroadcastInternal(bool bClearConfiguration, bool
 void USpoutSenderComponent::RefreshEditorState()
 {
 #if PLATFORM_WINDOWS
-    if ((!IsEditorWorld() && !IsPreviewWorld()) || !IsSupportedWorld())
+    if (!IsEditorWorld() && !IsPreviewWorld())
     {
         return;
     }
 
     StopBroadcastInternal(false, false);
+
+    if (!IsSupportedWorld())
+    {
+        ShutdownBridge();
+        return;
+    }
+
     ApplyTickPrerequisite();
 
     if (!IsD3D12Active())
@@ -323,6 +333,7 @@ void USpoutSenderComponent::RefreshEditorState()
         UE_LOG(LogTemp, Warning,
             TEXT("SpoutSenderComponent: D3D12 RHI is not active (current RHI: %s). Editor sender is disabled."),
             GDynamicRHI ? *FString(GDynamicRHI->GetName()) : TEXT("None"));
+        ShutdownBridge();
         return;
     }
 
@@ -351,7 +362,7 @@ bool USpoutSenderComponent::AcquireEditorOwnership(const FString& SenderName)
         return true;
     }
 
-    if (StartupPolicy != ESpoutWorldBootstrapPolicy::EditorGameAndSinglePreview || SenderName.IsEmpty())
+    if (SenderName.IsEmpty())
     {
         return true;
     }
@@ -386,6 +397,12 @@ bool USpoutSenderComponent::AcquireEditorOwnership(const FString& SenderName)
 
         if (!ExistingOwner->IsEditorWorld() && !ExistingOwner->IsPreviewWorld())
         {
+            continue;
+        }
+
+        if (!ExistingOwner->IsSupportedWorld())
+        {
+            ExistingOwner->StopBroadcastInternal(false, false);
             continue;
         }
 

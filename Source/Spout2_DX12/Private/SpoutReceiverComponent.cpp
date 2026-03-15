@@ -12,14 +12,14 @@
 #include "UObject/UnrealType.h"
 
 #if PLATFORM_WINDOWS
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include "Windows/WindowsHWrapper.h"
 
 THIRD_PARTY_INCLUDES_START
 #include "Windows/AllowWindowsPlatformTypes.h"
-
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
 
 #include <wrl/client.h>  
 
@@ -45,6 +45,9 @@ THIRD_PARTY_INCLUDES_START
 #endif
 #ifdef min
 #undef min
+#endif
+#ifdef IsMinimized
+#undef IsMinimized
 #endif
 
 #include "Windows/HideWindowsPlatformTypes.h"
