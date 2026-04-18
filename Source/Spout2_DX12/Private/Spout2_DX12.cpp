@@ -46,6 +46,7 @@ THIRD_PARTY_INCLUDES_END
 
 #define LOCTEXT_NAMESPACE "FSpout2_DX12Module"
 DEFINE_LOG_CATEGORY(LogSpoutRX);
+DEFINE_LOG_CATEGORY(LogSpoutSender);
 
 // Spout2_DX12 module implementation
 void FSpout2_DX12Module::StartupModule()

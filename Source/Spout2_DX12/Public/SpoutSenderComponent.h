@@ -14,6 +14,8 @@ struct ID3D11Resource;
 class spoutDX;
 class spoutDX12;
 class AActor;
+class FViewport;
+class SWindow;
 
 #if WITH_EDITOR
 struct FPropertyChangedEvent;
@@ -99,8 +101,15 @@ private:
     bool IsD3D12Active() const;
     bool IsUsingEditorViewportSource() const;
     bool IsUsingGameViewportSource() const;
+    bool ShouldUseSlateBackBufferGameViewportPath() const;
     bool HasValidConfiguredSource() const;
     bool ResolveCurrentSource(FTextureRHIRef& OutTexture, int32& OutWidth, int32& OutHeight, EPixelFormat& OutFormat) const;
+    void ResetGameViewportDebugState();
+    void LogGameViewportFailure(const TCHAR* Context, const FString& Reason) const;
+    void LogGameViewportReady(const FViewport* Viewport, const FTextureRHIRef& ViewportTexture, int32 Width, int32 Height, EPixelFormat Format) const;
+    bool RegisterGameViewportBackBufferCallback();
+    void UnregisterGameViewportBackBufferCallback();
+    void OnGameViewportBackBufferReady_RenderThread(SWindow& SlateWindow, const FTexture2DRHIRef& FrameBuffer);
 
     void EnsureBridge();
     void ShutdownBridge();
@@ -124,7 +133,38 @@ private:
     bool bIsBroadcasting = false;
     bool bWantsBroadcasting = false;
     bool bBroadcastIntentInitialized = false;
+    mutable FString LastGameViewportFailureKey;
+    mutable int32 LastGameViewportFailureRepeatCount = 0;
+    mutable bool bHasLoggedGameViewportReady = false;
+    mutable const void* LastLoggedGameViewportAddress = nullptr;
+    mutable const void* LastLoggedGameViewportTextureAddress = nullptr;
+    mutable int32 LastLoggedGameViewportWidth = 0;
+    mutable int32 LastLoggedGameViewportHeight = 0;
+    mutable EPixelFormat LastLoggedGameViewportFormat = PF_Unknown;
+    int32 GameViewportQueuedFrameCount = 0;
 
     void ResetStageSlots();
+    bool SendFrame_RenderThread(
+        FRHICommandListImmediate& RHICmdList,
+        const FTextureRHIRef& SrcRHI,
+        int32 W,
+        int32 H,
+        EPixelFormat PF,
+        int32 SlotIndex,
+        ERHIAccess SourceBeforeAccess,
+        ERHIAccess SourceAfterAccess,
+        bool bRestoreSourceState,
+        bool bLogGameViewport,
+        const FString& SenderContext);
     void QueueSendFrame_RenderThread(FTextureRHIRef SrcRHI, int32 W, int32 H, EPixelFormat PF, int32 SlotIndex);
+
+    FDelegateHandle GameViewportBackBufferReadyDelegateHandle;
+    const SWindow* GameViewportWindow = nullptr;
+    FString GameViewportRenderThreadContext;
+    double GameViewportMinSendIntervalSeconds = 0.0;
+    double GameViewportLastSendTimeSeconds = 0.0;
+    bool bGameViewportBackBufferCallbackRegistered = false;
+    bool bHasLoggedGameViewportBackBufferCallback = false;
+    bool bHasLoggedGameViewportWrongWindowSkip = false;
+    bool bHasLoggedGameViewportThrottle = false;
 };

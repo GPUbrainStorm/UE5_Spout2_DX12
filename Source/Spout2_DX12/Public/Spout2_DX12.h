@@ -4,6 +4,7 @@
 #include "Modules/ModuleManager.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogSpoutRX, Log, All);
+DECLARE_LOG_CATEGORY_EXTERN(LogSpoutSender, Log, All);
 
 class SPOUT2_DX12_API FSpout2_DX12Module : public IModuleInterface
 {
