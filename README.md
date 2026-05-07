@@ -1,6 +1,6 @@
 <img width="268" height="269" alt="logo" src="https://github.com/user-attachments/assets/8afeb86f-cbe7-400b-8002-252ed8121854" />
 
-# UE5_Spout2_DX12 v2.0.1
+# UE5_Spout2_DX12 v2.1.0
 
 Spout2 plugin for Unreal Engine 5 using DirectX 12.
 
@@ -221,7 +221,7 @@ Package the project normally. The plugin stages the required DLLs next to the pa
 
 ## Version
 
-Current release: `v2.0.1`
+Current release: `v2.1.0`
 
 ---
 
