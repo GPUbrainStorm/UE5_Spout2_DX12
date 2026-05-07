@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 2,
-	"VersionName": "2.0.1",
+	"VersionName": "2.1.0",
 	"FriendlyName": "Spout2_DX12",
 	"Description": "Spout2 Support For Unreal Engine 5 on DX12",
 	"Category": "Other",
