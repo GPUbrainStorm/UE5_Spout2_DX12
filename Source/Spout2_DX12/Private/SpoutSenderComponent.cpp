@@ -50,6 +50,9 @@ THIRD_PARTY_INCLUDES_START
 #ifdef IsMinimized
 #undef IsMinimized
 #endif
+#ifdef GetNextSibling
+#undef GetNextSibling
+#endif
 
 #include "Windows/HideWindowsPlatformTypes.h"
 THIRD_PARTY_INCLUDES_END
@@ -528,7 +531,7 @@ bool USpoutSenderComponent::RegisterGameViewportBackBufferCallback()
     GameViewportBackBufferReadyDelegateHandle =
         Renderer->OnBackBufferReadyToPresent().AddWeakLambda(
             this,
-            [this](SWindow& SlateWindow, const FTexture2DRHIRef& FrameBuffer)
+            [this](SWindow& SlateWindow, const auto& FrameBuffer)
             {
                 OnGameViewportBackBufferReady_RenderThread(SlateWindow, FrameBuffer);
             });
@@ -593,7 +596,7 @@ void USpoutSenderComponent::ShutdownBridge()
 #endif
 }
 
-void USpoutSenderComponent::OnGameViewportBackBufferReady_RenderThread(SWindow& SlateWindow, const FTexture2DRHIRef& FrameBuffer)
+void USpoutSenderComponent::OnGameViewportBackBufferReady_RenderThread(SWindow& SlateWindow, const FTextureRHIRef& FrameBuffer)
 {
 #if PLATFORM_WINDOWS
     check(IsInRenderingThread());
@@ -1253,8 +1256,9 @@ bool USpoutSenderComponent::SendFrame_RenderThread(
             *SenderContext);
     }
     return true;
-#endif
+#else
     return false;
+#endif
 }
 
 void USpoutSenderComponent::QueueSendFrame_RenderThread(FTextureRHIRef SrcRHI, int32 W, int32 H, EPixelFormat PF, int32 SlotIndex)

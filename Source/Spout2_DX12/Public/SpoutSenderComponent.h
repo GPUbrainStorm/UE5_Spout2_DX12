@@ -109,7 +109,7 @@ private:
     void LogGameViewportReady(const FViewport* Viewport, const FTextureRHIRef& ViewportTexture, int32 Width, int32 Height, EPixelFormat Format) const;
     bool RegisterGameViewportBackBufferCallback();
     void UnregisterGameViewportBackBufferCallback();
-    void OnGameViewportBackBufferReady_RenderThread(SWindow& SlateWindow, const FTexture2DRHIRef& FrameBuffer);
+    void OnGameViewportBackBufferReady_RenderThread(SWindow& SlateWindow, const FTextureRHIRef& FrameBuffer);
 
     void EnsureBridge();
     void ShutdownBridge();

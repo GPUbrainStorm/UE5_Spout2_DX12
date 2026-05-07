@@ -49,6 +49,9 @@ THIRD_PARTY_INCLUDES_START
 #ifdef IsMinimized
 #undef IsMinimized
 #endif
+#ifdef GetNextSibling
+#undef GetNextSibling
+#endif
 
 #include "Windows/HideWindowsPlatformTypes.h"
 THIRD_PARTY_INCLUDES_END
