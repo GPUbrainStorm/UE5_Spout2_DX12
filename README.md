@@ -1,6 +1,6 @@
 <img width="268" height="269" alt="logo" src="https://github.com/user-attachments/assets/8afeb86f-cbe7-400b-8002-252ed8121854" />
 
-# UE5_Spout2_DX12 v2.1.0
+# UE5_Spout2_DX12 v2.1.1
 
 Spout2 plugin for Unreal Engine 5 using DirectX 12.
 
@@ -16,6 +16,7 @@ Tested on Windows with DX12:
 - UE 5.4.4
 - UE 5.6.1
 - UE 5.7.2
+- UE 5.8 Preview
 
 [**You can donate to support the project here.**](https://www.paypal.com/donate/?hosted_button_id=G3JA94AZGB9T2)
 
@@ -32,6 +33,9 @@ Tested on Windows with DX12:
 - Optional double buffering for sender and receiver
 - Manual Blueprint and C++ runtime control functions
 - Property tooltips in the editor for sender and receiver settings
+- UE 5.8 Preview compatibility
+- Sender DX12 / D3D11On12 synchronization fixes
+- Packaged Game Viewport sender crash fix for UE 5.2+
 
 ---
 
@@ -122,6 +126,10 @@ Package the project normally. The plugin stages the required DLLs next to the pa
 
 - `StartBroadcast()` uses the same configured settings path that auto-start uses.
 - The runtime override functions are intended for manual runtime control.
+- In v2.1.1, the sender opens Spout DX12 using Unreal's native D3D12 device instead of creating an independent DX12 path.
+- Sender frame handoff now uses D3D11On12 acquire/release and fence tracking before reusing staging slots.
+- Packaged Game Viewport sender capture uses render-thread-safe stage-slot readiness while preserving D3D11On12 fence tracking.
+- The sender bridge is opened only when broadcasting starts, reducing editor and PIE bridge churn.
 
 ### Sender Screenshots
 
@@ -221,7 +229,7 @@ Package the project normally. The plugin stages the required DLLs next to the pa
 
 ## Version
 
-Current release: `v2.1.0`
+Current release: `v2.1.1`
 
 ---
 

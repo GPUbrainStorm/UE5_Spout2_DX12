@@ -663,7 +663,7 @@ bool USpoutSenderComponent::SignalSubmittedWork(int32 SlotIndex)
 #endif
 }
 
-bool USpoutSenderComponent::IsStageSlotReady(int32 SlotIndex) const
+bool USpoutSenderComponent::IsStageSlotReady_GameThread(int32 SlotIndex) const
 {
 #if PLATFORM_WINDOWS
     if (SlotIndex < 0 || SlotIndex > 1)
@@ -672,10 +672,29 @@ bool USpoutSenderComponent::IsStageSlotReady(int32 SlotIndex) const
     }
 
     const FSpoutStageSlot& Slot = StageSlots[SlotIndex];
+
+    // FRenderCommandFence::IsFenceComplete() is not render-thread safe.
+    // Render-thread callbacks must use IsStageSlotReady_RenderThread().
     if (!Slot.Fence.IsFenceComplete())
     {
         return false;
     }
+
+    return IsStageSlotReady_RenderThread(SlotIndex);
+#else
+    return false;
+#endif
+}
+
+bool USpoutSenderComponent::IsStageSlotReady_RenderThread(int32 SlotIndex) const
+{
+#if PLATFORM_WINDOWS
+    if (SlotIndex < 0 || SlotIndex > 1)
+    {
+        return false;
+    }
+
+    const FSpoutStageSlot& Slot = StageSlots[SlotIndex];
 
     if (Slot.bD3D11FencePending)
     {
@@ -917,12 +936,12 @@ void USpoutSenderComponent::OnGameViewportBackBufferReady_RenderThread(SWindow& 
     const int32 SlotCount = bUseDoubleBuffer ? 2 : 1;
     int32 SlotIndex = (SlotCount == 2) ? NextStageSlot : 0;
 
-    if (!IsStageSlotReady(SlotIndex))
+    if (!IsStageSlotReady_RenderThread(SlotIndex))
     {
         if (SlotCount == 2)
         {
             const int32 OtherSlot = 1 - SlotIndex;
-            if (IsStageSlotReady(OtherSlot))
+            if (IsStageSlotReady_RenderThread(OtherSlot))
             {
                 SlotIndex = OtherSlot;
             }
@@ -1658,13 +1677,13 @@ void USpoutSenderComponent::UpdateTexture()
 
     int32 SlotIndex = NextStageSlot;
 
-    if (!IsStageSlotReady(SlotIndex))
+    if (!IsStageSlotReady_GameThread(SlotIndex))
     {
         if (SlotCount == 2)
         {
             const int32 OtherSlot = 1 - SlotIndex;
 
-            if (IsStageSlotReady(OtherSlot))
+            if (IsStageSlotReady_GameThread(OtherSlot))
             {
                 if (IsUsingGameViewportSource())
                 {

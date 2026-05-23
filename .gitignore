@@ -73,5 +73,6 @@ Plugins/*/Intermediate/*
 # Cache files for the editor to use
 DerivedDataCache/*
 
-# Release Notes
+# Release Notes and shipping notes
 ReleaseNotes.md
+shipping.md

@@ -123,7 +123,8 @@ private:
     bool CacheDX11FenceObjects();
     void ReleaseFenceObjects();
     bool SignalSubmittedWork(int32 SlotIndex);
-    bool IsStageSlotReady(int32 SlotIndex) const;
+    bool IsStageSlotReady_GameThread(int32 SlotIndex) const;
+    bool IsStageSlotReady_RenderThread(int32 SlotIndex) const;
     static ID3D12Device* GetUE_D3D12Device();
     static ID3D11On12Device* GetD3D11On12(spoutDX12* InDX12);
     void RefreshEditorState();
