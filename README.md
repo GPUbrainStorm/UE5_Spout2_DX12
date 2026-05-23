@@ -22,20 +22,18 @@ Tested on Windows with DX12:
 
 ---
 
-## What It Includes
+## Included Features
 
 - Spout sender component
 - Spout receiver component
-- Render Target sender mode
-- Game Viewport sender mode
-- Editor Viewport sender mode
-- Editor, game, and preview startup policies
-- Optional double buffering for sender and receiver
-- Manual Blueprint and C++ runtime control functions
-- Property tooltips in the editor for sender and receiver settings
-- UE 5.8 Preview compatibility
-- Sender DX12 / D3D11On12 synchronization fixes
-- Packaged Game Viewport sender crash fix for UE 5.2+
+- Sender support for Render Target, Game Viewport, and Editor Viewport sources
+- Receiver support for writing incoming Spout frames into Unreal render targets
+- Automatic and manual sender / receiver startup options
+- Editor, game, and preview startup policies for controlled auto-start behavior
+- Optional sender and receiver double buffering
+- Configurable sender and receiver frame rates
+- Blueprint and C++ controls for starting, stopping, and changing active sources
+- Packaged build DLL staging for the included Spout runtime files
 
 ---
 
