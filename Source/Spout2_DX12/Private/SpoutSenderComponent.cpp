@@ -17,6 +17,11 @@
 #include "Logging/LogMacros.h"
 #include "UObject/UnrealType.h"
 #include "UObject/UObjectIterator.h"
+#include "Runtime/Launch/Resources/Version.h"
+
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8)
+#include "Slate/SlateViewportProvider.h"
+#endif
 
 #if WITH_EDITOR
 #include "Editor.h"
@@ -36,6 +41,7 @@ THIRD_PARTY_INCLUDES_START
 #include <d3d11.h>
 #include <d3d12.h>
 #include <d3d11on12.h>
+#include <d3d11_4.h>
 #include <dxgi.h>
 
 #include "SpoutDX.h"
@@ -465,15 +471,27 @@ void USpoutSenderComponent::EnsureBridge()
 #if PLATFORM_WINDOWS
     if (!SpoutBridge)
     {
-        SpoutBridge = new spoutDX12();
-        const bool bOpened = SpoutBridge->OpenDirectX12();
+        ID3D12Device* UEDevice = GetUE_D3D12Device();
+        if (!UEDevice)
+        {
+            UE_LOG(
+                LogSpoutSender,
+                Error,
+                TEXT("EnsureBridge: UE D3D12 device is unavailable; sender bridge was not opened. %s"),
+                *BuildSenderDebugContext(this));
+            return;
+        }
 
-        if (bOpened)
+        SpoutBridge = new spoutDX12();
+        const bool bOpened = SpoutBridge->OpenDirectX12(UEDevice, nullptr);
+
+        if (bOpened && CacheDX11FenceObjects())
         {
             UE_LOG(
                 LogSpoutSender,
                 Display,
-                TEXT("EnsureBridge: OpenDirectX12 succeeded. Bridge=%p. %s"),
+                TEXT("EnsureBridge: OpenDirectX12 succeeded with UE D3D12 device %p. Bridge=%p. %s"),
+                UEDevice,
                 SpoutBridge,
                 *BuildSenderDebugContext(this));
         }
@@ -482,11 +500,218 @@ void USpoutSenderComponent::EnsureBridge()
             UE_LOG(
                 LogSpoutSender,
                 Error,
-                TEXT("EnsureBridge: OpenDirectX12 failed. Bridge=%p. %s"),
+                TEXT("EnsureBridge: OpenDirectX12 with UE D3D12 device failed. Bridge=%p. %s"),
                 SpoutBridge,
                 *BuildSenderDebugContext(this));
+
+            ReleaseFenceObjects();
+            SpoutBridge->CloseDirectX12();
+            delete SpoutBridge;
+            SpoutBridge = nullptr;
         }
     }
+#endif
+}
+
+bool USpoutSenderComponent::CacheDX11FenceObjects()
+{
+#if PLATFORM_WINDOWS
+    if (CachedD3D11On12 && CachedDev11_5 && CachedCtx11_4 && CopyFence11)
+    {
+        return true;
+    }
+
+    if (!SpoutBridge)
+    {
+        return false;
+    }
+
+    if (!CachedD3D11On12)
+    {
+        ID3D11On12Device* D3D11On12 = GetD3D11On12(SpoutBridge);
+        if (!D3D11On12)
+        {
+            UE_LOG(LogSpoutSender, Error, TEXT("CacheDX11FenceObjects: D3D11On12 device unavailable. %s"), *BuildSenderDebugContext(this));
+            return false;
+        }
+
+        CachedD3D11On12 = D3D11On12;
+        CachedD3D11On12->AddRef();
+    }
+
+    ID3D11Device* Dev11 = SpoutBridge->GetD3D11device();
+    ID3D11DeviceContext* Ctx11 = SpoutBridge->GetD3D11context();
+
+    if (!Dev11 || !Ctx11)
+    {
+        UE_LOG(LogSpoutSender, Error, TEXT("CacheDX11FenceObjects: D3D11 device/context unavailable. %s"), *BuildSenderDebugContext(this));
+        return false;
+    }
+
+    if (!CachedDev11_5)
+    {
+        HRESULT hr = Dev11->QueryInterface(
+            __uuidof(ID3D11Device5),
+            reinterpret_cast<void**>(&CachedDev11_5));
+
+        if (FAILED(hr) || !CachedDev11_5)
+        {
+            UE_LOG(LogSpoutSender, Error, TEXT("CacheDX11FenceObjects: QueryInterface(ID3D11Device5) failed. hr=0x%08X. %s"), hr, *BuildSenderDebugContext(this));
+            return false;
+        }
+    }
+
+    if (!CachedCtx11_4)
+    {
+        HRESULT hr = Ctx11->QueryInterface(
+            __uuidof(ID3D11DeviceContext4),
+            reinterpret_cast<void**>(&CachedCtx11_4));
+
+        if (FAILED(hr) || !CachedCtx11_4)
+        {
+            UE_LOG(LogSpoutSender, Error, TEXT("CacheDX11FenceObjects: QueryInterface(ID3D11DeviceContext4) failed. hr=0x%08X. %s"), hr, *BuildSenderDebugContext(this));
+            return false;
+        }
+    }
+
+    if (!CopyFence11)
+    {
+        HRESULT hr = CachedDev11_5->CreateFence(
+            0,
+            D3D11_FENCE_FLAG_NONE,
+            __uuidof(ID3D11Fence),
+            reinterpret_cast<void**>(&CopyFence11));
+
+        if (FAILED(hr) || !CopyFence11)
+        {
+            UE_LOG(LogSpoutSender, Error, TEXT("CacheDX11FenceObjects: CreateFence failed. hr=0x%08X. %s"), hr, *BuildSenderDebugContext(this));
+            return false;
+        }
+    }
+
+    return true;
+#else
+    return false;
+#endif
+}
+
+void USpoutSenderComponent::ReleaseFenceObjects()
+{
+#if PLATFORM_WINDOWS
+    if (CopyFence11)
+    {
+        CopyFence11->Release();
+        CopyFence11 = nullptr;
+    }
+
+    if (CachedCtx11_4)
+    {
+        CachedCtx11_4->Release();
+        CachedCtx11_4 = nullptr;
+    }
+
+    if (CachedDev11_5)
+    {
+        CachedDev11_5->Release();
+        CachedDev11_5 = nullptr;
+    }
+
+    if (CachedD3D11On12)
+    {
+        CachedD3D11On12->Release();
+        CachedD3D11On12 = nullptr;
+    }
+
+    NextFenceValue = 1;
+
+    for (FSpoutStageSlot& Slot : StageSlots)
+    {
+        Slot.D3D11FenceValue = 0;
+        Slot.bD3D11FencePending = false;
+    }
+#endif
+}
+
+bool USpoutSenderComponent::SignalSubmittedWork(int32 SlotIndex)
+{
+#if PLATFORM_WINDOWS
+    if (!CacheDX11FenceObjects())
+    {
+        return false;
+    }
+
+    const uint64 FenceValue = NextFenceValue++;
+
+    HRESULT hr = CachedCtx11_4->Signal(CopyFence11, FenceValue);
+    if (FAILED(hr))
+    {
+        UE_LOG(LogSpoutSender, Error, TEXT("SignalSubmittedWork: ID3D11DeviceContext4::Signal failed. hr=0x%08X. %s"), hr, *BuildSenderDebugContext(this));
+        return false;
+    }
+
+    CachedCtx11_4->Flush();
+
+    if (SlotIndex == 0 || SlotIndex == 1)
+    {
+        StageSlots[SlotIndex].D3D11FenceValue = FenceValue;
+        StageSlots[SlotIndex].bD3D11FencePending = true;
+    }
+
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool USpoutSenderComponent::IsStageSlotReady(int32 SlotIndex) const
+{
+#if PLATFORM_WINDOWS
+    if (SlotIndex < 0 || SlotIndex > 1)
+    {
+        return false;
+    }
+
+    const FSpoutStageSlot& Slot = StageSlots[SlotIndex];
+    if (!Slot.Fence.IsFenceComplete())
+    {
+        return false;
+    }
+
+    if (Slot.bD3D11FencePending)
+    {
+        if (!CopyFence11)
+        {
+            return false;
+        }
+
+        if (CopyFence11->GetCompletedValue() < Slot.D3D11FenceValue)
+        {
+            return false;
+        }
+    }
+
+    return true;
+#else
+    return false;
+#endif
+}
+
+ID3D12Device* USpoutSenderComponent::GetUE_D3D12Device()
+{
+#if PLATFORM_WINDOWS
+    void* Native = GDynamicRHI ? GDynamicRHI->RHIGetNativeDevice() : nullptr;
+    return reinterpret_cast<ID3D12Device*>(Native);
+#else
+    return nullptr;
+#endif
+}
+
+ID3D11On12Device* USpoutSenderComponent::GetD3D11On12(spoutDX12* InDX12)
+{
+#if PLATFORM_WINDOWS
+    return InDX12 ? InDX12->GetD3D11On12device() : nullptr;
+#else
+    return nullptr;
 #endif
 }
 
@@ -528,6 +753,15 @@ bool USpoutSenderComponent::RegisterGameViewportBackBufferCallback()
 
     GameViewportWindow = Window.Get();
     GameViewportRenderThreadContext = BuildSenderDebugContext(this);
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8)
+    GameViewportBackBufferReadyDelegateHandle =
+        Renderer->OnBackBufferReadyToPresent().AddWeakLambda(
+            this,
+            [this](SWindow& SlateWindow, ISlateViewportProvider& ViewportProvider)
+            {
+                OnGameViewportBackBufferReady_RenderThread(SlateWindow, FTextureRHIRef(ViewportProvider.GetBackBufferResource()));
+            });
+#else
     GameViewportBackBufferReadyDelegateHandle =
         Renderer->OnBackBufferReadyToPresent().AddWeakLambda(
             this,
@@ -535,6 +769,7 @@ bool USpoutSenderComponent::RegisterGameViewportBackBufferCallback()
             {
                 OnGameViewportBackBufferReady_RenderThread(SlateWindow, FrameBuffer);
             });
+#endif
     bGameViewportBackBufferCallbackRegistered = true;
 
     UE_LOG(
@@ -576,6 +811,8 @@ void USpoutSenderComponent::ShutdownBridge()
 {
 #if PLATFORM_WINDOWS
     FlushRenderingCommands();
+    ResetStageSlots();
+    ReleaseFenceObjects();
 
     if (SpoutBridge)
     {
@@ -678,8 +915,29 @@ void USpoutSenderComponent::OnGameViewportBackBufferReady_RenderThread(SWindow& 
     }
 
     const int32 SlotCount = bUseDoubleBuffer ? 2 : 1;
-    const int32 SlotIndex = (SlotCount == 2) ? NextStageSlot : 0;
-    NextStageSlot = (SlotIndex + 1) % SlotCount;
+    int32 SlotIndex = (SlotCount == 2) ? NextStageSlot : 0;
+
+    if (!IsStageSlotReady(SlotIndex))
+    {
+        if (SlotCount == 2)
+        {
+            const int32 OtherSlot = 1 - SlotIndex;
+            if (IsStageSlotReady(OtherSlot))
+            {
+                SlotIndex = OtherSlot;
+            }
+            else
+            {
+                LogGameViewportFailure(TEXT("OnGameViewportBackBufferReady"), TEXT("Both stage slots are still pending; callback frame skipped."));
+                return;
+            }
+        }
+        else
+        {
+            LogGameViewportFailure(TEXT("OnGameViewportBackBufferReady"), TEXT("Single stage slot is still pending; callback frame skipped."));
+            return;
+        }
+    }
 
     FRHICommandListImmediate& RHICmdList = FRHICommandListExecutor::GetImmediateCommandList();
     const bool bSent = SendFrame_RenderThread(
@@ -700,6 +958,7 @@ void USpoutSenderComponent::OnGameViewportBackBufferReady_RenderThread(SWindow& 
         return;
     }
 
+    NextStageSlot = (SlotIndex + 1) % SlotCount;
     GameViewportLastSendTimeSeconds = CurrentTimeSeconds;
     ++GameViewportQueuedFrameCount;
 
@@ -745,6 +1004,7 @@ void USpoutSenderComponent::StopBroadcastInternal(bool bClearConfiguration, bool
 #if PLATFORM_WINDOWS
     UnregisterGameViewportBackBufferCallback();
     FlushRenderingCommands();
+    ResetStageSlots();
 
     if (SpoutBridge)
     {
@@ -752,7 +1012,7 @@ void USpoutSenderComponent::StopBroadcastInternal(bool bClearConfiguration, bool
         SpoutBridge->SetSenderName("");
     }
 
-    ResetStageSlots();
+    ReleaseFenceObjects();
     ResetGameViewportDebugState();
 
     if (bWasGameViewportSource)
@@ -814,8 +1074,6 @@ void USpoutSenderComponent::RefreshEditorState()
         ShutdownBridge();
         return;
     }
-
-    EnsureBridge();
 
     if (bWantsBroadcasting && HasValidConfiguredSource() && !CurrentSenderName.IsEmpty())
     {
@@ -973,8 +1231,6 @@ void USpoutSenderComponent::OnRegister()
         return;
     }
 
-    EnsureBridge();
-
     if (bWantsBroadcasting && HasValidConfiguredSource() && !CurrentSenderName.IsEmpty())
     {
         StartBroadcastConfigured(CurrentRenderTarget, CurrentSenderName, BroadcastFPS);
@@ -1030,7 +1286,6 @@ void USpoutSenderComponent::BeginPlay()
     }
 
     InitializeDesiredState();
-    EnsureBridge();
     ApplyTickPrerequisite();
 
     if (bWantsBroadcasting && HasValidConfiguredSource() && !CurrentSenderName.IsEmpty())
@@ -1164,7 +1419,11 @@ bool USpoutSenderComponent::SendFrame_RenderThread(
                 ETextureCreateFlags::RenderTargetable |
                 ETextureCreateFlags::Shared);
 
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 4)
+        Slot.Texture = RHICmdList.CreateTexture(Desc);
+#else
         Slot.Texture = RHICreateTexture(Desc);
+#endif
         Slot.Width = W;
         Slot.Height = H;
         Slot.Format = PF;
@@ -1209,6 +1468,12 @@ bool USpoutSenderComponent::SendFrame_RenderThread(
 
     RHICmdList.Transition(FRHITransitionInfo(Dst, ERHIAccess::CopyDest, ERHIAccess::SRVMask));
 
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 6)
+    RHICmdList.SubmitAndBlockUntilGPUIdle();
+#else
+    RHICmdList.SubmitCommandsAndFlushGPU();
+#endif
+
     if (!Slot.Wrapped11)
     {
         ID3D12Resource* NativeDX12 = static_cast<ID3D12Resource*>(Slot.Texture->GetNativeResource());
@@ -1232,12 +1497,37 @@ bool USpoutSenderComponent::SendFrame_RenderThread(
         }
     }
 
+    if (!CacheDX11FenceObjects() || !CachedD3D11On12)
+    {
+        if (bLogGameViewport)
+        {
+            UE_LOG(LogSpoutSender, Error, TEXT("SendFrame_RenderThread: D3D11On12 fence objects are unavailable for slot %d. %s"), SlotIndex, *SenderContext);
+        }
+        return false;
+    }
+
+    ID3D11Resource* ToAcquire[1] = { Slot.Wrapped11 };
+    CachedD3D11On12->AcquireWrappedResources(ToAcquire, 1);
+
     const bool bSent = SpoutBridge->SendDX11Resource(Slot.Wrapped11);
+    CachedD3D11On12->ReleaseWrappedResources(ToAcquire, 1);
+
+    const bool bSignaled = SignalSubmittedWork(SlotIndex);
+
     if (!bSent)
     {
         if (bLogGameViewport)
         {
             UE_LOG(LogSpoutSender, Error, TEXT("SendFrame_RenderThread: SendDX11Resource failed for slot %d Wrapped11=%p. %s"), SlotIndex, Slot.Wrapped11, *SenderContext);
+        }
+        return false;
+    }
+
+    if (!bSignaled)
+    {
+        if (bLogGameViewport)
+        {
+            UE_LOG(LogSpoutSender, Error, TEXT("SendFrame_RenderThread: Failed to signal D3D11 fence for slot %d. %s"), SlotIndex, *SenderContext);
         }
         return false;
     }
@@ -1291,7 +1581,32 @@ void USpoutSenderComponent::ResetStageSlots()
 #if PLATFORM_WINDOWS
     for (int32 i = 0; i < 2; ++i)
     {
-        StageSlots[i].Texture.SafeRelease();
+        if (StageSlots[i].bD3D11FencePending && CopyFence11)
+        {
+            const uint64 CompletedValue = CopyFence11->GetCompletedValue();
+            if (CompletedValue < StageSlots[i].D3D11FenceValue)
+            {
+                HANDLE CompletionEvent = CreateEvent(nullptr, false, false, nullptr);
+                if (CompletionEvent)
+                {
+                    const HRESULT hr = CopyFence11->SetEventOnCompletion(StageSlots[i].D3D11FenceValue, CompletionEvent);
+                    if (SUCCEEDED(hr))
+                    {
+                        WaitForSingleObject(CompletionEvent, INFINITE);
+                    }
+                    else
+                    {
+                        UE_LOG(LogSpoutSender, Warning, TEXT("ResetStageSlots: SetEventOnCompletion failed for slot %d. hr=0x%08X. %s"), i, hr, *BuildSenderDebugContext(this));
+                    }
+
+                    CloseHandle(CompletionEvent);
+                }
+                else
+                {
+                    UE_LOG(LogSpoutSender, Warning, TEXT("ResetStageSlots: CreateEvent failed while waiting for slot %d. %s"), i, *BuildSenderDebugContext(this));
+                }
+            }
+        }
 
         if (StageSlots[i].Wrapped11)
         {
@@ -1299,9 +1614,13 @@ void USpoutSenderComponent::ResetStageSlots()
             StageSlots[i].Wrapped11 = nullptr;
         }
 
+        StageSlots[i].Texture.SafeRelease();
+
         StageSlots[i].Width = 0;
         StageSlots[i].Height = 0;
         StageSlots[i].Format = PF_Unknown;
+        StageSlots[i].D3D11FenceValue = 0;
+        StageSlots[i].bD3D11FencePending = false;
     }
 
     NextStageSlot = 0;
@@ -1339,13 +1658,13 @@ void USpoutSenderComponent::UpdateTexture()
 
     int32 SlotIndex = NextStageSlot;
 
-    if (!StageSlots[SlotIndex].Fence.IsFenceComplete())
+    if (!IsStageSlotReady(SlotIndex))
     {
         if (SlotCount == 2)
         {
             const int32 OtherSlot = 1 - SlotIndex;
 
-            if (StageSlots[OtherSlot].Fence.IsFenceComplete())
+            if (IsStageSlotReady(OtherSlot))
             {
                 if (IsUsingGameViewportSource())
                 {
@@ -1361,13 +1680,13 @@ void USpoutSenderComponent::UpdateTexture()
             }
             else
             {
-                LogGameViewportFailure(TEXT("UpdateTexture"), TEXT("Both stage-slot fences are still pending; frame send skipped."));
+                LogGameViewportFailure(TEXT("UpdateTexture"), TEXT("Both stage slots are still pending; frame send skipped."));
                 return;
             }
         }
         else
         {
-            LogGameViewportFailure(TEXT("UpdateTexture"), TEXT("Single-buffer stage slot fence is still pending; frame send skipped."));
+            LogGameViewportFailure(TEXT("UpdateTexture"), TEXT("Single-buffer stage slot is still pending; frame send skipped."));
             return;
         }
     }

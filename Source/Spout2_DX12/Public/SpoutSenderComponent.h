@@ -9,7 +9,12 @@
 #include "SpoutWorldPolicy.h"
 #include "SpoutSenderComponent.generated.h"
 
+struct ID3D11Device5;
+struct ID3D11DeviceContext4;
+struct ID3D11Fence;
+struct ID3D11On12Device;
 struct ID3D11Resource;
+struct ID3D12Device;
 
 class spoutDX;
 class spoutDX12;
@@ -93,6 +98,8 @@ private:
         int32 Height = 0;
         EPixelFormat Format = PF_Unknown;
         FRenderCommandFence Fence;
+        uint64 D3D11FenceValue = 0;
+        bool bD3D11FencePending = false;
     };
 
     bool IsEditorWorld() const;
@@ -113,6 +120,12 @@ private:
 
     void EnsureBridge();
     void ShutdownBridge();
+    bool CacheDX11FenceObjects();
+    void ReleaseFenceObjects();
+    bool SignalSubmittedWork(int32 SlotIndex);
+    bool IsStageSlotReady(int32 SlotIndex) const;
+    static ID3D12Device* GetUE_D3D12Device();
+    static ID3D11On12Device* GetD3D11On12(spoutDX12* InDX12);
     void RefreshEditorState();
     void StopBroadcastInternal(bool bClearConfiguration, bool bClearDesiredState);
     void StartBroadcastConfigured(UTextureRenderTarget2D* RenderTarget, const FString& SenderName, int32 FPS);
@@ -129,6 +142,14 @@ private:
 
     FSpoutStageSlot StageSlots[2];
     int32 NextStageSlot = 0;
+
+#if PLATFORM_WINDOWS
+    ID3D11Device5* CachedDev11_5 = nullptr;
+    ID3D11DeviceContext4* CachedCtx11_4 = nullptr;
+    ID3D11Fence* CopyFence11 = nullptr;
+    ID3D11On12Device* CachedD3D11On12 = nullptr;
+    uint64 NextFenceValue = 1;
+#endif
 
     bool bIsBroadcasting = false;
     bool bWantsBroadcasting = false;
