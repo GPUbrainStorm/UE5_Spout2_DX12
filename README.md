@@ -9,14 +9,13 @@ This plugin adds Spout sender and receiver components for Unreal Engine. It work
 Discord Server:
 **https://discord.gg/BxHRHDdkNy**
 
-> Beta release.
-
 Tested on Windows with DX12:
 - UE 5.2.1
 - UE 5.4.4
 - UE 5.6.1
 - UE 5.7.2
 - UE 5.8 Preview
+- UE 5.8
 
 [**You can donate to support the project here.**](https://www.paypal.com/donate/?hosted_button_id=G3JA94AZGB9T2)
 
