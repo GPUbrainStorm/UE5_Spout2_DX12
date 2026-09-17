@@ -76,3 +76,6 @@ DerivedDataCache/*
 # Release Notes and shipping notes
 ReleaseNotes.md
 shipping.md
+
+# Local feature planning and development notes
+/local plans.md
